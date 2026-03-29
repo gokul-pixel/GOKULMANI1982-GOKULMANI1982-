@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { MessageCircle, Sparkles, Brain, Sprout, ChefHat } from "lucide-react";
+import { MessageCircle, Sparkles, Brain, Sprout, ChefHat, Music } from "lucide-react";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -54,6 +54,14 @@ export default function Login() {
                 <p className="text-xs" style={{ fontFamily: 'DM Sans, sans-serif' }}>Study plans & tutoring</p>
               </div>
               
+              <div className="bg-white border-2 border-black rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" data-testid="feature-music">
+                <div className="w-12 h-12 rounded-full border-2 border-black flex items-center justify-center mb-3" style={{ backgroundColor: '#FFB6E1' }}>
+                  <Music className="w-6 h-6" strokeWidth={3} />
+                </div>
+                <h3 className="font-bold text-sm mb-1" style={{ fontFamily: 'Outfit, sans-serif' }}>Music Companion</h3>
+                <p className="text-xs" style={{ fontFamily: 'DM Sans, sans-serif' }}>Emotion-based music</p>
+              </div>
+              
               <div className="bg-white border-2 border-black rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" data-testid="feature-crop">
                 <div className="w-12 h-12 rounded-full border-2 border-black flex items-center justify-center mb-3" style={{ backgroundColor: '#CAFFBF' }}>
                   <Sprout className="w-6 h-6" strokeWidth={3} />
@@ -68,14 +76,6 @@ export default function Login() {
                 </div>
                 <h3 className="font-bold text-sm mb-1" style={{ fontFamily: 'Outfit, sans-serif' }}>Cook Bot</h3>
                 <p className="text-xs" style={{ fontFamily: 'DM Sans, sans-serif' }}>Recipes & cooking tips</p>
-              </div>
-              
-              <div className="bg-white border-2 border-black rounded-2xl p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]" data-testid="feature-brain">
-                <div className="w-12 h-12 rounded-full border-2 border-black flex items-center justify-center mb-3" style={{ backgroundColor: '#FDFFB6' }}>
-                  <Brain className="w-6 h-6" strokeWidth={3} />
-                </div>
-                <h3 className="font-bold text-sm mb-1" style={{ fontFamily: 'Outfit, sans-serif' }}>Brain Tools</h3>
-                <p className="text-xs" style={{ fontFamily: 'DM Sans, sans-serif' }}>Calculator, notes & timer</p>
               </div>
             </div>
 

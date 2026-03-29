@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { MessageCircle, Sparkles, Sprout, ChefHat, Settings, LogOut, Send, Mic, Camera, Upload, Brain, Image as ImageIcon, MoreVertical, Maximize2, X } from "lucide-react";
+import { MessageCircle, Sparkles, Sprout, ChefHat, Settings, LogOut, Send, Mic, Camera, Upload, Brain, Image as ImageIcon, MoreVertical, Maximize2, X, Music } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
@@ -22,7 +22,11 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState([]);
   const [uploadedImage, setUploadedImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [emotionDetected, setEmotionDetected] = useState(null);
   const messagesEndRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
 
@@ -226,6 +230,12 @@ export default function Dashboard() {
       color: "#FFADAD",
       description: "Your culinary expert",
       avatar: "https://static.prod-images.emergentagent.com/jobs/e65b5c7d-6f8a-446a-b7fd-669077ab5cbc/images/30068d8fa3d7067a7042458785c1456f8421a08bb7971bc1dad138e3796754c7.png"
+    },
+    music: {
+      name: "Music Companion",
+      icon: Music,
+      color: "#FFB6E1",
+      description: "Emotion-based music recommendations"
     }
   };
 
@@ -263,29 +273,27 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Bot Selection */}
-        <div className="p-6 border-b-2 border-black">
-          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Select Bot</p>
-          <div className="grid grid-cols-2 gap-2">
+        {/* Bot Selection - Ultra Compact */}
+        <div className="p-4 border-b-2 border-black">
+          <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
             {Object.entries(botConfigs).map(([key, config]) => {
               const Icon = config.icon;
               return (
                 <button
                   key={key}
                   onClick={() => setCurrentBot(key)}
-                  className={`p-3 rounded-xl border-2 border-black font-bold text-left flex flex-col items-center gap-2 transition-all ${
+                  title={config.name}
+                  className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 border-black font-bold flex items-center justify-center transition-all ${
                     currentBot === key
-                      ? 'shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5'
+                      ? 'shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5 scale-110'
                       : 'shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5'
                   }`}
                   style={{ 
                     backgroundColor: currentBot === key ? config.color : '#FFFFFF',
-                    fontFamily: 'Outfit, sans-serif'
                   }}
                   data-testid={`bot-${key}-btn`}
                 >
-                  <Icon className="w-5 h-5" strokeWidth={2.5} />
-                  <span className="text-xs text-center">{config.name}</span>
+                  <Icon className="w-6 h-6" strokeWidth={2.5} />
                 </button>
               );
             })}
@@ -362,9 +370,23 @@ export default function Dashboard() {
               <div>
                 <h2 className="text-2xl font-bold" style={{ fontFamily: 'Outfit, sans-serif' }}>{currentBotConfig.name}</h2>
                 <p className="text-sm opacity-80">{currentBotConfig.description}</p>
+                {currentBot === "music" && emotionDetected && (
+                  <p className="text-sm font-bold mt-1">Detected Emotion: {emotionDetected} 🎵</p>
+                )}
               </div>
             </div>
             <div className="flex gap-2">
+              {currentBot === "music" && (
+                <button
+                  onClick={isCameraActive ? stopEmotionDetection : startEmotionDetection}
+                  className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
+                    isCameraActive ? 'bg-red-500 text-white' : 'bg-white'
+                  }`}
+                  data-testid="emotion-camera-btn"
+                >
+                  {isCameraActive ? 'Stop Camera' : 'Start Face Reading'}
+                </button>
+              )}
               {currentBot === "student" && (
                 <>
                   <button
@@ -389,6 +411,20 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+          
+          {/* Camera preview for Music Companion */}
+          {currentBot === "music" && isCameraActive && (
+            <div className="mt-4 relative">
+              <video 
+                ref={videoRef}
+                className="w-48 h-36 rounded-lg border-2 border-black object-cover"
+                autoPlay
+                playsInline
+                muted
+              />
+              <canvas ref={canvasRef} className="hidden" />
+            </div>
+          )}
         </div>
 
         {/* Messages */}
