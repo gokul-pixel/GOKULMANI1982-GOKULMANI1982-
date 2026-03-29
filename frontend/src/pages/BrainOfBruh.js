@@ -8,6 +8,8 @@ const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 export default function BrainOfBruh() {
   const navigate = useNavigate();
   const [activeModule, setActiveModule] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(null);
+  const [user, setUser] = useState(null);
   
   // Calculator
   const [calcDisplay, setCalcDisplay] = useState("0");
@@ -42,10 +44,30 @@ export default function BrainOfBruh() {
   const [eventDescription, setEventDescription] = useState("");
 
   useEffect(() => {
-    loadNotes();
-    loadTasks();
-    loadEvents();
-  }, []);
+    const checkAuth = async () => {
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/auth/me`, {
+          credentials: 'include'
+        });
+        if (!response.ok) throw new Error('Not authenticated');
+        const userData = await response.json();
+        setIsAuthenticated(true);
+        setUser(userData);
+      } catch (error) {
+        setIsAuthenticated(false);
+        navigate('/login');
+      }
+    };
+    checkAuth();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      loadNotes();
+      loadTasks();
+      loadEvents();
+    }
+  }, [isAuthenticated, user]);
 
   useEffect(() => {
     if (isTimerRunning) {
@@ -263,6 +285,17 @@ export default function BrainOfBruh() {
     { id: 'tasks', name: 'Tasks', icon: CheckSquare, color: '#FFADAD' },
     { id: 'calendar', name: 'Calendar', icon: CalendarIcon, color: '#FFD6A5' }
   ];
+
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#FFFDF9' }}>
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-black border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="font-bold" style={{ fontFamily: 'Outfit, sans-serif' }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#FFFDF9', fontFamily: 'DM Sans, sans-serif' }}>

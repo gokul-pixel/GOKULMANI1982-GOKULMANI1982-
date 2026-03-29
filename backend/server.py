@@ -191,55 +191,49 @@ async def create_session(session_id: str = Header(..., alias="X-Session-ID")):
 
 @api_router.get("/auth/me")
 async def get_me(authorization: str = Header(None), session_token: str = Cookie(None)):
-    try:
-        current_user = await get_current_user(authorization, None, session_token)
-        return current_user
-    except:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await get_current_user(authorization, None, session_token)
+    return current_user
 
 @api_router.post("/auth/logout")
 async def logout(authorization: str = Header(None), session_token: str = Cookie(None)):
-    try:
-        current_user = await get_current_user(authorization, None, session_token)
-        await db.user_sessions.delete_many({"user_id": current_user.user_id})
-        return {"message": "Logged out successfully"}
-    except:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+    current_user = await get_current_user(authorization, None, session_token)
+    await db.user_sessions.delete_many({"user_id": current_user.user_id})
+    return {"message": "Logged out successfully"}
 
 @api_router.post("/chat")
 async def chat(request: ChatRequest, authorization: str = Header(None), auth: str = Query(None), session_token: str = Cookie(None)):
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    system_messages = {
+        "normal": "You are BRUH, a friendly and helpful AI assistant. Be conversational and supportive.",
+        "student": "You are BRUH Student Partner, an AI tutor and study companion. Help students learn, create study plans, explain concepts clearly, and motivate them. Support multiple Indian languages when requested. Format responses with bullet points (★) for clarity.",
+        "crop": "You are BRUH Crop Assistant, an agricultural expert helping farmers identify plant diseases, provide growing instructions, and suggest treatments. Be practical and supportive. Format responses with bullet points (★).",
+        "cook": "You are BRUH Cook, a culinary expert. Provide recipes, cooking tips, and techniques. Be enthusiastic and descriptive. Format responses with bullet points (★) and numbered steps for recipes."
+    }
+    
+    system_msg = system_messages.get(request.bot_type, system_messages["normal"])
+    
+    if request.mode == "elaborate":
+        system_msg += " Provide detailed, comprehensive explanations."
+    elif request.mode == "short":
+        system_msg += " Keep responses concise and to the point."
+    
+    recent_messages = await db.chat_messages.find(
+        {"user_id": current_user.user_id, "bot_type": request.bot_type},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(10).to_list(10)
+    recent_messages.reverse()
+    
+    provider_model_map = {
+        "gpt-5.1": ("openai", "gpt-5.1"),
+        "gpt-4o": ("openai", "gpt-4o"),
+        "claude-sonnet-4-5": ("anthropic", "claude-4-sonnet-20250514"),
+        "gemini-3-flash": ("gemini", "gemini-3-flash-preview")
+    }
+    
+    provider, model = provider_model_map.get(request.ai_model, ("openai", "gpt-5.1"))
+    
     try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        system_messages = {
-            "normal": "You are BRUH, a friendly and helpful AI assistant. Be conversational and supportive.",
-            "student": "You are BRUH Student Partner, an AI tutor and study companion. Help students learn, create study plans, explain concepts clearly, and motivate them. Support multiple Indian languages when requested. Format responses with bullet points (★) for clarity.",
-            "crop": "You are BRUH Crop Assistant, an agricultural expert helping farmers identify plant diseases, provide growing instructions, and suggest treatments. Be practical and supportive. Format responses with bullet points (★).",
-            "cook": "You are BRUH Cook, a culinary expert. Provide recipes, cooking tips, and techniques. Be enthusiastic and descriptive. Format responses with bullet points (★) and numbered steps for recipes."
-        }
-        
-        system_msg = system_messages.get(request.bot_type, system_messages["normal"])
-        
-        if request.mode == "elaborate":
-            system_msg += " Provide detailed, comprehensive explanations."
-        elif request.mode == "short":
-            system_msg += " Keep responses concise and to the point."
-        
-        recent_messages = await db.chat_messages.find(
-            {"user_id": current_user.user_id, "bot_type": request.bot_type},
-            {"_id": 0}
-        ).sort("timestamp", -1).limit(10).to_list(10)
-        recent_messages.reverse()
-        
-        provider_model_map = {
-            "gpt-5.1": ("openai", "gpt-5.1"),
-            "gpt-4o": ("openai", "gpt-4o"),
-            "claude-sonnet-4-5": ("anthropic", "claude-4-sonnet-20250514"),
-            "gemini-3-flash": ("gemini", "gemini-3-flash-preview")
-        }
-        
-        provider, model = provider_model_map.get(request.ai_model, ("openai", "gpt-5.1"))
-        
         chat = LlmChat(
             api_key=EMERGENT_KEY,
             session_id=f"{current_user.user_id}_{request.bot_type}",
@@ -278,9 +272,10 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
         await db.chat_messages.insert_one(ai_msg.model_dump())
         
         return {"message": response, "message_id": ai_msg.message_id}
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 @api_router.get("/chat/history")
 async def get_chat_history(
@@ -289,15 +284,12 @@ async def get_chat_history(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        messages = await db.chat_messages.find(
-            {"user_id": current_user.user_id, "bot_type": bot_type},
-            {"_id": 0}
-        ).sort("timestamp", 1).to_list(100)
-        return messages
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    messages = await db.chat_messages.find(
+        {"user_id": current_user.user_id, "bot_type": bot_type},
+        {"_id": 0}
+    ).sort("timestamp", 1).to_list(100)
+    return messages
 
 @api_router.get("/chat/conversations")
 async def get_conversations(
@@ -305,34 +297,31 @@ async def get_conversations(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        pipeline = [
-            {"$match": {"user_id": current_user.user_id}},
-            {"$sort": {"timestamp": -1}},
-            {"$group": {
-                "_id": "$bot_type",
-                "last_message": {"$first": "$$ROOT"},
-                "count": {"$sum": 1}
-            }},
-            {"$project": {
-                "_id": 0,
-                "bot_type": "$_id",
-                "last_message": {
-                    "message_id": "$last_message.message_id",
-                    "user_id": "$last_message.user_id",
-                    "bot_type": "$last_message.bot_type",
-                    "role": "$last_message.role",
-                    "content": "$last_message.content",
-                    "timestamp": "$last_message.timestamp"
-                },
-                "count": 1
-            }}
-        ]
-        conversations = await db.chat_messages.aggregate(pipeline).to_list(10)
-        return conversations
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    pipeline = [
+        {"$match": {"user_id": current_user.user_id}},
+        {"$sort": {"timestamp": -1}},
+        {"$group": {
+            "_id": "$bot_type",
+            "last_message": {"$first": "$$ROOT"},
+            "count": {"$sum": 1}
+        }},
+        {"$project": {
+            "_id": 0,
+            "bot_type": "$_id",
+            "last_message": {
+                "message_id": "$last_message.message_id",
+                "user_id": "$last_message.user_id",
+                "bot_type": "$last_message.bot_type",
+                "role": "$last_message.role",
+                "content": "$last_message.content",
+                "timestamp": "$last_message.timestamp"
+            },
+            "count": 1
+        }}
+    ]
+    conversations = await db.chat_messages.aggregate(pipeline).to_list(10)
+    return conversations
 
 @api_router.post("/upload")
 async def upload_file(
@@ -341,34 +330,31 @@ async def upload_file(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
-        path = f"{APP_NAME}/uploads/{current_user.user_id}/{uuid.uuid4()}.{ext}"
-        data = await file.read()
-        result = put_object(path, data, file.content_type or "application/octet-stream")
-        
-        file_doc = {
-            "file_id": str(uuid.uuid4()),
-            "user_id": current_user.user_id,
-            "storage_path": result["path"],
-            "original_filename": file.filename,
-            "content_type": file.content_type,
-            "size": result["size"],
-            "is_deleted": False,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.files.insert_one(file_doc)
-        
-        return {
-            "file_id": file_doc["file_id"],
-            "filename": file.filename,
-            "url": f"/api/files/{result['path']}"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    path = f"{APP_NAME}/uploads/{current_user.user_id}/{uuid.uuid4()}.{ext}"
+    data = await file.read()
+    result = put_object(path, data, file.content_type or "application/octet-stream")
+    
+    file_doc = {
+        "file_id": str(uuid.uuid4()),
+        "user_id": current_user.user_id,
+        "storage_path": result["path"],
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": result["size"],
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.files.insert_one(file_doc)
+    
+    return {
+        "file_id": file_doc["file_id"],
+        "filename": file.filename,
+        "url": f"/api/files/{result['path']}"
+    }
 
 @api_router.get("/files/{path:path}")
 async def download_file(
@@ -461,12 +447,9 @@ async def get_tasks(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        tasks = await db.tasks.find({"user_id": current_user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
-        return tasks
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    tasks = await db.tasks.find({"user_id": current_user.user_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return tasks
 
 @api_router.post("/tasks")
 async def create_task(
@@ -475,22 +458,19 @@ async def create_task(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        task = {
-            "task_id": str(uuid.uuid4()),
-            "user_id": current_user.user_id,
-            "title": task_data["title"],
-            "completed": False,
-            "alarm_time": task_data.get("alarm_time"),
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.tasks.insert_one(task)
-        return task
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    task = {
+        "task_id": str(uuid.uuid4()),
+        "user_id": current_user.user_id,
+        "title": task_data["title"],
+        "completed": False,
+        "alarm_time": task_data.get("alarm_time"),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.tasks.insert_one(task)
+    return task
 
 @api_router.patch("/tasks/{task_id}")
 async def update_task(
@@ -500,18 +480,15 @@ async def update_task(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        await db.tasks.update_one(
-            {"task_id": task_id, "user_id": current_user.user_id},
-            {"$set": task_data}
-        )
-        
-        task = await db.tasks.find_one({"task_id": task_id}, {"_id": 0})
-        return task
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    await db.tasks.update_one(
+        {"task_id": task_id, "user_id": current_user.user_id},
+        {"$set": task_data}
+    )
+    
+    task = await db.tasks.find_one({"task_id": task_id}, {"_id": 0})
+    return task
 
 @api_router.delete("/tasks/{task_id}")
 async def delete_task(
@@ -520,12 +497,9 @@ async def delete_task(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        await db.tasks.delete_one({"task_id": task_id, "user_id": current_user.user_id})
-        return {"message": "Task deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    await db.tasks.delete_one({"task_id": task_id, "user_id": current_user.user_id})
+    return {"message": "Task deleted"}
 
 @api_router.get("/notes")
 async def get_notes(
@@ -533,12 +507,9 @@ async def get_notes(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        notes = await db.notes.find({"user_id": current_user.user_id}, {"_id": 0}).sort("updated_at", -1).to_list(100)
-        return notes
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    notes = await db.notes.find({"user_id": current_user.user_id}, {"_id": 0}).sort("updated_at", -1).to_list(100)
+    return notes
 
 @api_router.post("/notes")
 async def create_note(
@@ -547,22 +518,19 @@ async def create_note(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        note = {
-            "note_id": str(uuid.uuid4()),
-            "user_id": current_user.user_id,
-            "title": note_data["title"],
-            "content": note_data["content"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.notes.insert_one(note)
-        return note
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    note = {
+        "note_id": str(uuid.uuid4()),
+        "user_id": current_user.user_id,
+        "title": note_data["title"],
+        "content": note_data["content"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.notes.insert_one(note)
+    return note
 
 @api_router.patch("/notes/{note_id}")
 async def update_note(
@@ -572,19 +540,16 @@ async def update_note(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        update_data = {**note_data, "updated_at": datetime.now(timezone.utc).isoformat()}
-        await db.notes.update_one(
-            {"note_id": note_id, "user_id": current_user.user_id},
-            {"$set": update_data}
-        )
-        
-        note = await db.notes.find_one({"note_id": note_id}, {"_id": 0})
-        return note
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    update_data = {**note_data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    await db.notes.update_one(
+        {"note_id": note_id, "user_id": current_user.user_id},
+        {"$set": update_data}
+    )
+    
+    note = await db.notes.find_one({"note_id": note_id}, {"_id": 0})
+    return note
 
 @api_router.delete("/notes/{note_id}")
 async def delete_note(
@@ -593,12 +558,9 @@ async def delete_note(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        await db.notes.delete_one({"note_id": note_id, "user_id": current_user.user_id})
-        return {"message": "Note deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    await db.notes.delete_one({"note_id": note_id, "user_id": current_user.user_id})
+    return {"message": "Note deleted"}
 
 @api_router.get("/events")
 async def get_events(
@@ -606,12 +568,9 @@ async def get_events(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        events = await db.events.find({"user_id": current_user.user_id}, {"_id": 0}).sort("date", 1).to_list(100)
-        return events
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    events = await db.events.find({"user_id": current_user.user_id}, {"_id": 0}).sort("date", 1).to_list(100)
+    return events
 
 @api_router.post("/events")
 async def create_event(
@@ -620,23 +579,20 @@ async def create_event(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        
-        event = {
-            "event_id": str(uuid.uuid4()),
-            "user_id": current_user.user_id,
-            "title": event_data["title"],
-            "date": event_data["date"],
-            "time": event_data.get("time"),
-            "description": event_data.get("description"),
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.events.insert_one(event)
-        return event
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    event = {
+        "event_id": str(uuid.uuid4()),
+        "user_id": current_user.user_id,
+        "title": event_data["title"],
+        "date": event_data["date"],
+        "time": event_data.get("time"),
+        "description": event_data.get("description"),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.events.insert_one(event)
+    return event
 
 @api_router.delete("/events/{event_id}")
 async def delete_event(
@@ -645,12 +601,9 @@ async def delete_event(
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
-    try:
-        current_user = await get_current_user(authorization, auth, session_token)
-        await db.events.delete_one({"event_id": event_id, "user_id": current_user.user_id})
-        return {"message": "Event deleted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    current_user = await get_current_user(authorization, auth, session_token)
+    await db.events.delete_one({"event_id": event_id, "user_id": current_user.user_id})
+    return {"message": "Event deleted"}
 
 app.include_router(api_router)
 
