@@ -28,6 +28,8 @@ export default function BrainOfBruh() {
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [timerInterval, setTimerInterval] = useState(null);
+  const [isEditingTimer, setIsEditingTimer] = useState(false);
+  const [timerInputValue, setTimerInputValue] = useState(25);
   
   // Tasks
   const [tasks, setTasks] = useState([]);
@@ -79,7 +81,8 @@ export default function BrainOfBruh() {
           setTimerSeconds(59);
         } else {
           setIsTimerRunning(false);
-          alert("Timer finished!");
+          playAlarm();
+          alert("⏰ Timer finished!");
         }
       }, 1000);
       setTimerInterval(interval);
@@ -88,6 +91,54 @@ export default function BrainOfBruh() {
       clearInterval(timerInterval);
     }
   }, [isTimerRunning, timerMinutes, timerSeconds]);
+
+  const playAlarm = () => {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+    
+    oscillator.start(audioContext.currentTime);
+    oscillator.stop(audioContext.currentTime + 0.3);
+    
+    setTimeout(() => {
+      const osc2 = audioContext.createOscillator();
+      const gain2 = audioContext.createGain();
+      osc2.connect(gain2);
+      gain2.connect(audioContext.destination);
+      osc2.frequency.value = 1000;
+      osc2.type = 'sine';
+      gain2.gain.setValueAtTime(0.3, audioContext.currentTime);
+      osc2.start(audioContext.currentTime);
+      osc2.stop(audioContext.currentTime + 0.3);
+    }, 400);
+    
+    setTimeout(() => {
+      const osc3 = audioContext.createOscillator();
+      const gain3 = audioContext.createGain();
+      osc3.connect(gain3);
+      gain3.connect(audioContext.destination);
+      osc3.frequency.value = 1200;
+      osc3.type = 'sine';
+      gain3.gain.setValueAtTime(0.3, audioContext.currentTime);
+      osc3.start(audioContext.currentTime);
+      osc3.stop(audioContext.currentTime + 0.5);
+    }, 800);
+  };
+
+  const setCustomTimer = () => {
+    const minutes = parseInt(timerInputValue) || 25;
+    setTimerMinutes(minutes);
+    setTimerSeconds(0);
+    setIsEditingTimer(false);
+  };
 
   const loadNotes = async () => {
     try {
@@ -459,9 +510,49 @@ export default function BrainOfBruh() {
             {activeModule === 'timer' && (
               <div className="bg-white border-2 border-black rounded-2xl p-8 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] text-center" data-testid="timer-module">
                 <h2 className="text-3xl font-bold mb-6" style={{ fontFamily: 'Outfit, sans-serif' }}>Study Timer</h2>
-                <div className="text-8xl font-black mb-8" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }} data-testid="timer-display">
-                  {String(timerMinutes).padStart(2, '0')}:{String(timerSeconds).padStart(2, '0')}
-                </div>
+                
+                {isEditingTimer ? (
+                  <div className="mb-8">
+                    <input
+                      type="number"
+                      value={timerInputValue}
+                      onChange={(e) => setTimerInputValue(e.target.value)}
+                      className="text-6xl font-black text-center border-2 border-black rounded-xl p-4 w-64"
+                      placeholder="Minutes"
+                      data-testid="timer-input"
+                    />
+                    <p className="text-sm mt-2 opacity-70">Enter minutes (1-999)</p>
+                    <div className="flex justify-center gap-4 mt-4">
+                      <button
+                        onClick={setCustomTimer}
+                        className="px-6 py-3 rounded-xl border-2 border-black bg-[#CAFFBF] shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] font-bold"
+                      >
+                        Set Timer
+                      </button>
+                      <button
+                        onClick={() => setIsEditingTimer(false)}
+                        className="px-6 py-3 rounded-xl border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] font-bold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div 
+                      className="text-8xl font-black mb-8 cursor-pointer hover:scale-105 transition-transform" 
+                      style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }} 
+                      data-testid="timer-display"
+                      onClick={() => !isTimerRunning && setIsEditingTimer(true)}
+                    >
+                      {String(timerMinutes).padStart(2, '0')}:{String(timerSeconds).padStart(2, '0')}
+                    </div>
+                    <p className="text-sm mb-6 opacity-70">
+                      {!isTimerRunning && "Click time to edit"}
+                    </p>
+                  </>
+                )}
+                
                 <div className="flex justify-center gap-4">
                   <button
                     onClick={() => setIsTimerRunning(!isTimerRunning)}
@@ -474,7 +565,7 @@ export default function BrainOfBruh() {
                   <button
                     onClick={() => {
                       setIsTimerRunning(false);
-                      setTimerMinutes(25);
+                      setTimerMinutes(timerInputValue || 25);
                       setTimerSeconds(0);
                     }}
                     className="px-8 py-4 rounded-xl border-2 border-black bg-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] font-bold flex items-center gap-2"

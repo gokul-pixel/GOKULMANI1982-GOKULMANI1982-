@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { MessageCircle, Sparkles, Sprout, ChefHat, Settings, LogOut, Send, Mic, Camera, Upload, Brain, Image as ImageIcon, MoreVertical, Maximize2, X, Music } from "lucide-react";
+import { MessageCircle, Sparkles, Sprout, ChefHat, Settings, LogOut, Send, Mic, Camera, Upload, Brain, Image as ImageIcon, MoreVertical, Maximize2, X, Music, Copy, Edit2, Trash2, Volume2, VolumeX } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 
@@ -31,6 +31,10 @@ export default function Dashboard() {
   const [showQuizResults, setShowQuizResults] = useState(false);
   const [currentSong, setCurrentSong] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [selectedVoice, setSelectedVoice] = useState("gojo");
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editedContent, setEditedContent] = useState("");
   const messagesEndRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -134,6 +138,11 @@ export default function Dashboard() {
       if (!response.ok) throw new Error('Failed to send message');
 
       const data = await response.json();
+      
+      // Speak the response
+      if (data.message) {
+        speakText(data.message);
+      }
       
       // For cooking bot, get video if available
       if (currentBot === 'cook' && data.video_url) {
@@ -301,11 +310,90 @@ export default function Dashboard() {
   const handleVoiceRecord = () => {
     if (!isRecording) {
       setIsRecording(true);
-      setTimeout(() => {
+      
+      // Web Speech API for voice input
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = false;
+        
+        recognition.onresult = (event) => {
+          const transcript = event.results[0][0].transcript;
+          setInputMessage(transcript);
+          setIsRecording(false);
+        };
+        
+        recognition.onerror = () => {
+          setIsRecording(false);
+        };
+        
+        recognition.onend = () => {
+          setIsRecording(false);
+        };
+        
+        recognition.start();
+      } else {
+        alert('Speech recognition not supported in this browser');
         setIsRecording(false);
-      }, 3000);
+      }
     } else {
       setIsRecording(false);
+    }
+  };
+
+  const speakText = (text, voice = selectedVoice) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      
+      const voices = window.speechSynthesis.getVoices();
+      if (voice === 'gojo') {
+        const maleVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('Daniel'));
+        if (maleVoice) utterance.voice = maleVoice;
+        utterance.pitch = 0.9;
+        utterance.rate = 1.1;
+      } else if (voice === 'noelle') {
+        const femaleVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Victoria'));
+        if (femaleVoice) utterance.voice = femaleVoice;
+        utterance.pitch = 1.2;
+        utterance.rate = 1.0;
+      }
+      
+      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onend = () => setIsSpeaking(false);
+      
+      window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const stopSpeaking = () => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  const copyMessage = (content) => {
+    navigator.clipboard.writeText(content);
+    alert('Message copied to clipboard!');
+  };
+
+  const deleteConversation = async (botType) => {
+    if (!confirm('Delete all messages for this bot?')) return;
+    
+    try {
+      await fetch(`${BACKEND_URL}/api/chat/delete/${botType}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      
+      if (currentBot === botType) {
+        setMessages([]);
+      }
+      loadConversations();
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
     }
   };
 
@@ -517,12 +605,23 @@ export default function Dashboard() {
               {conversations.map((conv, idx) => (
                 <div
                   key={idx}
-                  className="p-3 bg-white border-2 border-black rounded-xl text-xs font-medium cursor-pointer hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
-                  onClick={() => setCurrentBot(conv._id)}
-                  data-testid={`history-item-${idx}`}
+                  className="relative group"
                 >
-                  <p className="font-bold mb-1">{botConfigs[conv._id]?.name}</p>
-                  <p className="opacity-70 truncate">{conv.count} messages</p>
+                  <div
+                    className="p-3 bg-white border-2 border-black rounded-xl text-xs font-medium cursor-pointer hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+                    onClick={() => setCurrentBot(conv.bot_type || conv._id)}
+                    data-testid={`history-item-${idx}`}
+                  >
+                    <p className="font-bold mb-1">{botConfigs[conv.bot_type || conv._id]?.name}</p>
+                    <p className="opacity-70 truncate">{conv.count} messages</p>
+                  </div>
+                  <button
+                    onClick={() => deleteConversation(conv.bot_type || conv._id)}
+                    className="absolute top-2 right-2 p-1 rounded bg-red-500 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                    data-testid={`delete-conv-${idx}`}
+                  >
+                    <Trash2 className="w-3 h-3" strokeWidth={2.5} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -596,6 +695,38 @@ export default function Dashboard() {
                   {isCameraActive ? 'Stop Camera' : 'Start Face Reading'}
                 </button>
               )}
+              
+              {/* Voice Selector */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setSelectedVoice('gojo')}
+                  className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
+                    selectedVoice === 'gojo' ? 'bg-blue-500 text-white' : 'bg-white'
+                  }`}
+                  data-testid="voice-gojo-btn"
+                >
+                  🗣️ Gojo (Male)
+                </button>
+                <button
+                  onClick={() => setSelectedVoice('noelle')}
+                  className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
+                    selectedVoice === 'noelle' ? 'bg-pink-500 text-white' : 'bg-white'
+                  }`}
+                  data-testid="voice-noelle-btn"
+                >
+                  🗣️ Noelle (Female)
+                </button>
+                <button
+                  onClick={isSpeaking ? stopSpeaking : null}
+                  className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
+                    isSpeaking ? 'bg-green-500 text-white animate-pulse' : 'bg-white'
+                  }`}
+                  data-testid="speaker-status-btn"
+                >
+                  {isSpeaking ? <VolumeX className="w-5 h-5 inline" /> : <Volume2 className="w-5 h-5 inline" />}
+                </button>
+              </div>
+              
               {currentBot === "student" && (
                 <>
                   <button
@@ -677,7 +808,27 @@ export default function Dashboard() {
                 data-testid={`message-${idx}`}
               >
                 {msg.role === "assistant" ? (
-                  <div className="bg-white border-2 border-black rounded-2xl rounded-tl-none p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%]">
+                  <div className="bg-white border-2 border-black rounded-2xl rounded-tl-none p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%] relative group">
+                    <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <motion.button
+                        whileHover={{ scale: 1.2 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => copyMessage(msg.content)}
+                        className="p-1 rounded bg-gray-200 hover:bg-gray-300"
+                        data-testid="copy-msg-btn"
+                      >
+                        <Copy className="w-4 h-4" strokeWidth={2.5} />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.2 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => speakText(msg.content)}
+                        className="p-1 rounded bg-blue-200 hover:bg-blue-300"
+                        data-testid="speak-msg-btn"
+                      >
+                        <Volume2 className="w-4 h-4" strokeWidth={2.5} />
+                      </motion.button>
+                    </div>
                     <div className="prose prose-sm max-w-none">
                       <ReactMarkdown>
                         {msg.content}

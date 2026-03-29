@@ -460,6 +460,20 @@ Include:
         "pdf_url": f"/api/files/{result['path']}"
     }
 
+@api_router.delete("/chat/delete/{bot_type}")
+async def delete_chat_history(
+    bot_type: str,
+    authorization: str = Header(None),
+    auth: str = Query(None),
+    session_token: str = Cookie(None)
+):
+    current_user = await get_current_user(authorization, auth, session_token)
+    await db.chat_messages.delete_many({
+        "user_id": current_user.user_id,
+        "bot_type": bot_type
+    })
+    return {"message": "Chat history deleted"}
+
 @api_router.get("/chat/history")
 async def get_chat_history(
     bot_type: str = Query(...),
