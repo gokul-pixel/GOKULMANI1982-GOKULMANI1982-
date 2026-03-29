@@ -1,34 +1,169 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'DM Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #FFFDF9;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.prose {
+  max-width: 100%;
 }
 
-.App-link {
-    color: #61dafb;
+.prose p {
+  margin-bottom: 1em;
+  line-height: 1.6;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.prose ul {
+  list-style-type: none;
+  padding-left: 0;
+  margin: 1em 0;
+}
+
+.prose ul li {
+  padding-left: 1.5em;
+  position: relative;
+  margin-bottom: 0.5em;
+}
+
+.prose ul li:before {
+  content: "★";
+  position: absolute;
+  left: 0;
+  color: #FF5A5F;
+  font-weight: bold;
+}
+
+.prose ol {
+  margin: 1em 0;
+  padding-left: 1.5em;
+}
+
+.prose ol li {
+  margin-bottom: 0.5em;
+  padding-left: 0.5em;
+}
+
+.prose strong {
+  font-weight: 700;
+  color: #1A1A1A;
+}
+
+.prose code {
+  background-color: #F5F5F5;
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  border: 1px solid #E0E0E0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+.prose pre {
+  background-color: #1A1A1A;
+  color: #FFFFFF;
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  border: 2px solid #000000;
+}
+
+.prose pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+  color: inherit;
+}
+
+.prose h1, .prose h2, .prose h3 {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.prose h1 {
+  font-size: 1.5em;
+}
+
+.prose h2 {
+  font-size: 1.3em;
+}
+
+.prose h3 {
+  font-size: 1.1em;
+}
+
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #FFFDF9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1A1A1A;
+  border-radius: 5px;
+  border: 2px solid #FFFDF9;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #FF5A5F;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #1A1A1A;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
