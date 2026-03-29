@@ -1,3 +1,11 @@
+:root {
+  --bg-primary: #FFFDF9;
+  --bg-secondary: #FFFFFF;
+  --text-primary: #1A1A1A;
+  --text-secondary: #1A1A1A;
+  --border-color: #000000;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -8,7 +16,8 @@ body {
   font-family: 'DM Sans', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #FFFDF9;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
 }
 
 .prose {

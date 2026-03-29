@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [imagePreview, setImagePreview] = useState(null);
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [emotionDetected, setEmotionDetected] = useState(null);
+  const [currentTheme, setCurrentTheme] = useState("light");
   const messagesEndRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -193,6 +194,11 @@ export default function Dashboard() {
 
   const handleLogout = async () => {
     try {
+      // Stop camera if active
+      if (isCameraActive) {
+        stopEmotionDetection();
+      }
+      
       await fetch(`${BACKEND_URL}/api/auth/logout`, {
         method: 'POST',
         credentials: 'include'
@@ -200,6 +206,32 @@ export default function Dashboard() {
       navigate('/login');
     } catch (error) {
       console.error('Logout failed:', error);
+    }
+  };
+
+  const applyTheme = (theme) => {
+    setCurrentTheme(theme);
+    const root = document.documentElement;
+    
+    if (theme === "dark") {
+      root.style.setProperty('--bg-primary', '#1A1A1A');
+      root.style.setProperty('--bg-secondary', '#2A2A2A');
+      root.style.setProperty('--text-primary', '#FFFFFF');
+      root.style.setProperty('--text-secondary', '#E0E0E0');
+      root.style.setProperty('--border-color', '#FFFFFF');
+    } else if (theme === "cool-blue") {
+      root.style.setProperty('--bg-primary', '#E3F2FD');
+      root.style.setProperty('--bg-secondary', '#BBDEFB');
+      root.style.setProperty('--text-primary', '#0D47A1');
+      root.style.setProperty('--text-secondary', '#1565C0');
+      root.style.setProperty('--border-color', '#0D47A1');
+    } else {
+      // Light theme (default)
+      root.style.setProperty('--bg-primary', '#FFFDF9');
+      root.style.setProperty('--bg-secondary', '#FFFFFF');
+      root.style.setProperty('--text-primary', '#1A1A1A');
+      root.style.setProperty('--text-secondary', '#1A1A1A');
+      root.style.setProperty('--border-color', '#000000');
     }
   };
 
@@ -622,13 +654,41 @@ export default function Dashboard() {
 
                 <div>
                   <label className="block text-sm font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Theme</label>
-                  <p className="text-sm opacity-70">Neo-Brutalist (Active)</p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Account</label>
-                  <p className="text-sm opacity-70">Logged in with Google</p>
-                  <p className="text-xs opacity-50 mt-1">{user?.email}</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => applyTheme('light')}
+                      className={`p-3 rounded-xl border-2 border-black font-medium text-sm transition-all ${
+                        currentTheme === 'light' 
+                          ? 'bg-black text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]' 
+                          : 'bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                      }`}
+                      data-testid="theme-light-btn"
+                    >
+                      Light
+                    </button>
+                    <button
+                      onClick={() => applyTheme('dark')}
+                      className={`p-3 rounded-xl border-2 border-black font-medium text-sm transition-all ${
+                        currentTheme === 'dark' 
+                          ? 'bg-black text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]' 
+                          : 'bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                      }`}
+                      data-testid="theme-dark-btn"
+                    >
+                      Dark
+                    </button>
+                    <button
+                      onClick={() => applyTheme('cool-blue')}
+                      className={`p-3 rounded-xl border-2 border-black font-medium text-sm transition-all ${
+                        currentTheme === 'cool-blue' 
+                          ? 'bg-black text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]' 
+                          : 'bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]'
+                      }`}
+                      data-testid="theme-coolblue-btn"
+                    >
+                      Cool Blue
+                    </button>
+                  </div>
                 </div>
               </div>
             </motion.div>
