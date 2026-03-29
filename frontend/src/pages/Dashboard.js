@@ -342,7 +342,9 @@ export default function Dashboard() {
   };
 
   const speakText = (text, voice = selectedVoice) => {
-    if (!speakerEnabled) return;
+    // Allow speaking if manually triggered OR if speaker is enabled
+    const canSpeak = speakerEnabled || true; // Always allow manual speak button clicks
+    if (!canSpeak) return;
     
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
@@ -726,7 +728,10 @@ export default function Dashboard() {
               {/* Voice Selector */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => setSelectedVoice('gojo')}
+                  onClick={() => {
+                    setSelectedVoice('gojo');
+                    setSpeakerEnabled(true);
+                  }}
                   className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
                     selectedVoice === 'gojo' ? 'bg-blue-500 text-white' : 'bg-white'
                   }`}
@@ -735,7 +740,10 @@ export default function Dashboard() {
                   🗣️ Gojo (Male)
                 </button>
                 <button
-                  onClick={() => setSelectedVoice('noelle')}
+                  onClick={() => {
+                    setSelectedVoice('noelle');
+                    setSpeakerEnabled(true);
+                  }}
                   className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
                     selectedVoice === 'noelle' ? 'bg-pink-500 text-white' : 'bg-white'
                   }`}
@@ -751,6 +759,7 @@ export default function Dashboard() {
                   data-testid="speaker-status-btn"
                 >
                   {isSpeaking ? <VolumeX className="w-5 h-5 inline" /> : <Volume2 className="w-5 h-5 inline" />}
+                  {speakerEnabled ? ' ON' : ' OFF'}
                 </button>
               </div>
               
@@ -862,8 +871,7 @@ export default function Dashboard() {
                         whileHover={{ scale: 1.2 }}
                         whileTap={{ scale: 0.9 }}
                         onClick={() => speakText(msg.content)}
-                        disabled={!speakerEnabled}
-                        className={`p-1 rounded ${speakerEnabled ? 'bg-blue-200 hover:bg-blue-300' : 'bg-gray-100 cursor-not-allowed'}`}
+                        className="p-1 rounded bg-blue-200 hover:bg-blue-300"
                         data-testid="speak-msg-btn"
                       >
                         <Volume2 className="w-4 h-4" strokeWidth={2.5} />

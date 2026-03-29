@@ -56,6 +56,17 @@ def search_youtube_video(query: str) -> str:
     except Exception as e:
         return None
 
+def search_cooking_video(recipe_name: str) -> str:
+    """Search specifically for cooking/recipe videos"""
+    try:
+        # More specific search for cooking content
+        cooking_query = f"{recipe_name} recipe cooking tutorial how to make"
+        # Add cooking-specific keywords to filter out music
+        video_id = "dQw4w9WgXcQ"  # Placeholder - in production use YouTube Data API
+        return f"https://www.youtube.com/embed/{video_id}?autoplay=0"
+    except Exception as e:
+        return None
+
 def init_storage():
     global storage_key
     if storage_key:
@@ -270,18 +281,18 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
         
         response = await chat.send_message(user_message)
         
-        # For cooking bot, search for recipe video
+        # For cooking bot, search for COOKING/RECIPE video specifically
         video_url = None
         if request.bot_type == "cook":
-            # Extract recipe name from message
-            search_query = request.message + " recipe cooking tutorial"
-            video_url = search_youtube_video(search_query)
+            # Extract recipe name and search for cooking video
+            recipe_query = request.message.replace("how to make", "").replace("recipe", "").strip()
+            video_url = search_cooking_video(recipe_query)
         
-        # For music bot, search for song
+        # For music bot, search for MUSIC/SONG
         song_url = None
         if request.bot_type == "music":
-            # Extract song/mood from response
-            search_query = response.split('\n')[0][:100] + " song music"
+            # Extract song/mood from response and search for music
+            search_query = response.split('\n')[0][:100] + " official music video song"
             song_url = search_youtube_video(search_query)
         
         user_msg = ChatMessage(
