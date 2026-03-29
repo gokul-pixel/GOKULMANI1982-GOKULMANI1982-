@@ -223,7 +223,7 @@ export default function Dashboard() {
       {/* Sidebar */}
       <div className="w-80 border-r-2 border-black flex flex-col" style={{ backgroundColor: '#FFFDF9' }}>
         {/* Header */}
-        <div className="p-6 border-b-2 border-black">
+        <div className="p-8 border-b-2 border-black">
           <h1 className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
             BRUH
           </h1>
@@ -239,9 +239,9 @@ export default function Dashboard() {
         </div>
 
         {/* Bot Selection */}
-        <div className="p-4 border-b-2 border-black">
-          <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Select Bot</p>
-          <div className="space-y-2">
+        <div className="p-6 border-b-2 border-black">
+          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Select Bot</p>
+          <div className="space-y-3">
             {Object.entries(botConfigs).map(([key, config]) => {
               const Icon = config.icon;
               return (
@@ -268,10 +268,10 @@ export default function Dashboard() {
         </div>
 
         {/* History */}
-        <div className="flex-1 overflow-y-auto p-4">
-          <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Chat History</p>
+        <div className="flex-1 overflow-y-auto p-6">
+          <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Chat History</p>
           {conversations.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-3">
               {conversations.map((conv, idx) => (
                 <div
                   key={idx}
@@ -290,7 +290,7 @@ export default function Dashboard() {
         </div>
 
         {/* Bottom Actions */}
-        <div className="p-4 border-t-2 border-black space-y-2">
+        <div className="p-6 border-t-2 border-black space-y-3">
           <button
             onClick={() => navigate('/brain')}
             className="w-full p-3 rounded-xl border-2 border-black font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all bg-white"
@@ -324,7 +324,7 @@ export default function Dashboard() {
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat Header */}
-        <div className="p-6 border-b-2 border-black" style={{ backgroundColor: currentBotConfig.color }}>
+        <div className="p-8 border-b-2 border-black" style={{ backgroundColor: currentBotConfig.color }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {currentBotConfig.avatar ? (
@@ -367,7 +367,7 @@ export default function Dashboard() {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4" data-testid="messages-container">
+        <div className="flex-1 overflow-y-auto p-8 space-y-6" data-testid="messages-container">
           {messages.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-md">
@@ -391,14 +391,16 @@ export default function Dashboard() {
                 data-testid={`message-${idx}`}
               >
                 {msg.role === "assistant" ? (
-                  <div className="bg-white border-2 border-black rounded-2xl rounded-tl-none p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%]">
-                    <ReactMarkdown className="prose prose-sm max-w-none">
-                      {msg.content}
-                    </ReactMarkdown>
+                  <div className="bg-white border-2 border-black rounded-2xl rounded-tl-none p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%]">
+                    <div className="prose prose-sm max-w-none">
+                      <ReactMarkdown>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
                   </div>
                 ) : (
-                  <div className="bg-black text-white rounded-2xl rounded-tr-none p-4 max-w-[85%]">
-                    <p>{msg.content}</p>
+                  <div className="bg-black text-white rounded-2xl rounded-tr-none p-6 max-w-[85%]">
+                    <p className="text-base leading-relaxed">{msg.content}</p>
                   </div>
                 )}
               </motion.div>
@@ -419,7 +421,7 @@ export default function Dashboard() {
         </div>
 
         {/* Input Area */}
-        <div className="p-6 bg-white border-t-2 border-black">
+        <div className="p-8 bg-white border-t-2 border-black">
           <div className="flex gap-3 items-end">
             <div className="flex-1 relative">
               <input
@@ -432,7 +434,7 @@ export default function Dashboard() {
                 style={{ fontFamily: 'DM Sans, sans-serif' }}
                 data-testid="chat-input"
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-2">
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-3">
                 <input
                   type="file"
                   ref={cameraInputRef}
@@ -443,7 +445,7 @@ export default function Dashboard() {
                 />
                 <button
                   onClick={() => cameraInputRef.current?.click()}
-                  className="p-2 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
+                  className="p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
                   data-testid="camera-btn"
                 >
                   <Camera className="w-5 h-5" strokeWidth={2.5} />
@@ -456,14 +458,14 @@ export default function Dashboard() {
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="p-2 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
+                  className="p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
                   data-testid="upload-btn"
                 >
                   <Upload className="w-5 h-5" strokeWidth={2.5} />
                 </button>
                 <button
                   onClick={handleVoiceRecord}
-                  className={`p-2 rounded-full border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${
+                  className={`p-3 rounded-full border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${
                     isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white'
                   }`}
                   data-testid="mic-btn"
@@ -475,7 +477,7 @@ export default function Dashboard() {
             <button
               onClick={sendMessage}
               disabled={!inputMessage.trim() || isLoading}
-              className="px-6 py-4 font-bold rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white"
+              className="px-8 py-5 font-bold rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white"
               style={{ backgroundColor: '#FF5A5F', fontFamily: 'Outfit, sans-serif' }}
               data-testid="send-btn"
             >
