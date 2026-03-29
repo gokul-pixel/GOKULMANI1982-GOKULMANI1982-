@@ -12,16 +12,19 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import requests
 from io import BytesIO
-from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContent
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 import base64
-from PIL import Image
 import json
+import re
+import random
+import tempfile
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
+from PyPDF2 import PdfReader
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -38,34 +41,30 @@ STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 APP_NAME = "bruh-assistant"
 storage_key = None
 
-def search_youtube_video(query: str) -> str:
-    """Search YouTube and return embed URL"""
+def search_youtube_real(query: str) -> str:
+    """Search YouTube by scraping search results and return embed URL for first result"""
     try:
-        # Use YouTube oEmbed API (no API key needed)
         search_url = f"https://www.youtube.com/results?search_query={quote(query)}"
-        
-        # Simple approach: construct embed URL with search
-        # For production, you'd use YouTube Data API
-        # For now, return a placeholder embed with search
-        video_id = "dQw4w9WgXcQ"  # Placeholder
-        
-        # Alternative: Use invidious or similar free YouTube API
-        # For this demo, we'll use a search-based approach
-        
-        return f"https://www.youtube.com/embed/{video_id}?autoplay=1"
-    except Exception as e:
+        resp = requests.get(search_url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept-Language': 'en-US,en;q=0.9'
+        }, timeout=10)
+        video_ids = re.findall(r'watch\?v=([a-zA-Z0-9_-]{11})', resp.text)
+        if video_ids:
+            return f"https://www.youtube.com/embed/{video_ids[0]}?autoplay=0"
+        return None
+    except Exception:
         return None
 
 def search_cooking_video(recipe_name: str) -> str:
     """Search specifically for cooking/recipe videos"""
-    try:
-        # More specific search for cooking content
-        cooking_query = f"{recipe_name} recipe cooking tutorial how to make"
-        # Add cooking-specific keywords to filter out music
-        video_id = "dQw4w9WgXcQ"  # Placeholder - in production use YouTube Data API
-        return f"https://www.youtube.com/embed/{video_id}?autoplay=0"
-    except Exception as e:
-        return None
+    cooking_query = f"{recipe_name} recipe cooking tutorial how to make"
+    return search_youtube_real(cooking_query)
+
+def search_music_video(song_or_mood: str) -> str:
+    """Search specifically for music/songs"""
+    music_query = f"{song_or_mood} official audio song music"
+    return search_youtube_real(music_query)
 
 def init_storage():
     global storage_key
@@ -117,6 +116,8 @@ class ChatRequest(BaseModel):
     ai_model: str = "gpt-5.1"
     image_data: Optional[str] = None
     mode: Optional[str] = "normal"
+    file_context: Optional[str] = None
+    language: Optional[str] = "en"
 
 class Task(BaseModel):
     task_id: str
@@ -234,67 +235,95 @@ async def logout(authorization: str = Header(None), session_token: str = Cookie(
 async def chat(request: ChatRequest, authorization: str = Header(None), auth: str = Query(None), session_token: str = Cookie(None)):
     current_user = await get_current_user(authorization, auth, session_token)
     
+    # Language instruction map
+    lang_instructions = {
+        "en": "",
+        "hi": " Always respond in Hindi (हिन्दी).",
+        "ta": " Always respond in Tamil (தமிழ்).",
+        "te": " Always respond in Telugu (తెలుగు).",
+        "bn": " Always respond in Bengali (বাংলা).",
+        "mr": " Always respond in Marathi (मराठी).",
+        "gu": " Always respond in Gujarati (ગુજરાતી).",
+        "kn": " Always respond in Kannada (ಕನ್ನಡ).",
+        "ml": " Always respond in Malayalam (മലയാളം).",
+        "pa": " Always respond in Punjabi (ਪੰਜਾਬੀ)."
+    }
+    
     system_messages = {
         "normal": "You are BRUH, a friendly and helpful AI assistant. Be conversational and supportive.",
-        "student": "You are BRUH Student Partner, an AI tutor and study companion. Help students learn, create study plans, explain concepts clearly, and motivate them. Support multiple Indian languages when requested. Format responses with bullet points (★) for clarity.",
-        "crop": "You are BRUH Crop Assistant, an agricultural expert helping farmers identify plant diseases, provide growing instructions, and suggest treatments. Be practical and supportive. Format responses with bullet points (★).",
-        "cook": "You are BRUH Cook, a culinary expert. Provide recipes, cooking tips, and techniques. Be enthusiastic and descriptive. Format responses with bullet points (★) and numbered steps for recipes.",
-        "music": "You are BRUH Music Companion, an AI music curator. Recommend songs and playlists based on emotions, moods, and preferences. Be enthusiastic about music and explain why each recommendation fits the mood. Format responses with bullet points (★)."
+        "student": "You are BRUH Student Partner, an AI tutor and study companion. Help students learn, create study plans, explain concepts clearly, and motivate them. Format responses with bullet points for clarity. When document content is provided, analyze it thoroughly and help the student understand it.",
+        "crop": "You are BRUH Crop Assistant, an agricultural expert helping farmers identify plant diseases, provide growing instructions, and suggest treatments. When an image is provided, analyze it carefully for signs of disease, pest damage, nutrient deficiency, or other issues. Be practical and supportive.",
+        "cook": "You are BRUH Cook, a culinary expert. Provide recipes, cooking tips, and techniques. Be enthusiastic and descriptive. Always suggest a specific dish name. Format responses with numbered steps for recipes. When asked for video recommendations, mention the specific dish name clearly.",
+        "music": "You are BRUH Music Companion, an AI music curator. Based on the user's emotion or mood, recommend exactly 3 specific songs with artist names. Format each recommendation as: Song Title - Artist Name. Explain briefly why each song matches the mood. Be enthusiastic about music."
     }
     
     system_msg = system_messages.get(request.bot_type, system_messages["normal"])
+    
+    # Add language instruction
+    lang_extra = lang_instructions.get(request.language, "")
+    if lang_extra:
+        system_msg += lang_extra
     
     if request.mode == "elaborate":
         system_msg += " Provide detailed, comprehensive explanations."
     elif request.mode == "short":
         system_msg += " Keep responses concise and to the point."
     
-    recent_messages = await db.chat_messages.find(
-        {"user_id": current_user.user_id, "bot_type": request.bot_type},
-        {"_id": 0}
-    ).sort("timestamp", -1).limit(10).to_list(10)
-    recent_messages.reverse()
+    # Add file context to the message if provided
+    message_text = request.message
+    if request.file_context:
+        message_text = f"Document Context:\n---\n{request.file_context[:8000]}\n---\n\nUser Question: {request.message}"
     
     provider_model_map = {
         "gpt-5.1": ("openai", "gpt-5.1"),
         "gpt-4o": ("openai", "gpt-4o"),
-        "claude-sonnet-4-5": ("anthropic", "claude-4-sonnet-20250514"),
+        "claude-sonnet-4-5": ("anthropic", "claude-sonnet-4-5-20250929"),
         "gemini-3-flash": ("gemini", "gemini-3-flash-preview")
     }
     
     provider, model = provider_model_map.get(request.ai_model, ("openai", "gpt-5.1"))
     
     try:
-        chat = LlmChat(
+        llm_chat = LlmChat(
             api_key=EMERGENT_KEY,
-            session_id=f"{current_user.user_id}_{request.bot_type}",
+            session_id=f"{current_user.user_id}_{request.bot_type}_{uuid.uuid4().hex[:8]}",
             system_message=system_msg
         ).with_model(provider, model)
         
-        # For now, if image is provided, acknowledge it in the message
-        # Full vision API support can be added when available
-        if request.image_data:
-            message_text = f"{request.message}\n\n[Note: Image uploaded. Full image analysis will be available soon. For now, I can help based on your description.]"
-            user_message = UserMessage(text=message_text)
+        # Build user message with optional image
+        if request.image_data and request.image_data.startswith("data:image"):
+            # Extract base64 data from data URL
+            base64_data = request.image_data.split(",", 1)[1] if "," in request.image_data else request.image_data
+            image_content = ImageContent(image_base64=base64_data)
+            user_message = UserMessage(text=message_text, file_contents=[image_content])
         else:
-            user_message = UserMessage(text=request.message)
+            user_message = UserMessage(text=message_text)
         
-        response = await chat.send_message(user_message)
+        response = await llm_chat.send_message(user_message)
         
-        # For cooking bot, search for COOKING/RECIPE video specifically
+        # For cooking bot, search for COOKING/RECIPE video
         video_url = None
         if request.bot_type == "cook":
-            # Extract recipe name and search for cooking video
             recipe_query = request.message.replace("how to make", "").replace("recipe", "").strip()
             video_url = search_cooking_video(recipe_query)
         
-        # For music bot, search for MUSIC/SONG
+        # For music bot, search for each recommended song
         song_url = None
         if request.bot_type == "music":
-            # Extract song/mood from response and search for music
-            search_query = response.split('\n')[0][:100] + " official music video song"
-            song_url = search_youtube_video(search_query)
+            # Try to extract first song recommendation from response
+            lines = response.split('\n')
+            for line in lines:
+                if '-' in line and any(c.isalpha() for c in line):
+                    clean_line = re.sub(r'[*#★•\d.]+', '', line).strip()
+                    if len(clean_line) > 5:
+                        song_url = search_music_video(clean_line)
+                        if song_url:
+                            break
+            if not song_url:
+                # Fallback: search with the emotion/mood mentioned
+                song_url = search_music_video(request.message + " song")
         
+        # Save messages to DB
         user_msg = ChatMessage(
             message_id=str(uuid.uuid4()),
             user_id=current_user.user_id,
@@ -304,7 +333,6 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
             image_url=request.image_data[:100] if request.image_data else None,
             timestamp=datetime.now(timezone.utc).isoformat()
         )
-        
         await db.chat_messages.insert_one(user_msg.model_dump())
         
         ai_msg = ChatMessage(
@@ -316,7 +344,6 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
             image_url=None,
             timestamp=datetime.now(timezone.utc).isoformat()
         )
-        
         await db.chat_messages.insert_one(ai_msg.model_dump())
         
         result = {"message": response, "message_id": ai_msg.message_id}
@@ -329,6 +356,7 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
     except HTTPException:
         raise
     except Exception as e:
+        logging.error(f"Chat error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Chat error: {str(e)}")
 
 @api_router.post("/analyze-emotion")
@@ -341,26 +369,65 @@ async def analyze_emotion(
     try:
         current_user = await get_current_user(authorization, auth, session_token)
         
-        # Use AI to analyze facial emotion
-        chat = LlmChat(
+        raw_image = image_data.get("image_data", "")
+        
+        # Use GPT vision to analyze facial emotion from the camera frame
+        llm_chat = LlmChat(
             api_key=EMERGENT_KEY,
-            session_id=f"{current_user.user_id}_emotion",
-            system_message="You are an emotion detection AI. Analyze the facial expression in images and return ONLY ONE WORD describing the primary emotion: happy, sad, angry, calm, excited, tired, neutral, surprised, or anxious."
+            session_id=f"{current_user.user_id}_emotion_{uuid.uuid4().hex[:6]}",
+            system_message="You are an emotion detection AI. Analyze the facial expression in images and return ONLY ONE WORD describing the primary emotion. Choose from: happy, sad, angry, calm, excited, tired, neutral, surprised, anxious, energetic, relaxed, romantic, melancholic. Return ONLY the single emotion word, nothing else."
         ).with_model("openai", "gpt-5.1")
         
-        emotion_msg = "Analyze the facial expression in this image and respond with only one emotion word."
+        # Extract base64 from data URL
+        if raw_image.startswith("data:image"):
+            base64_data = raw_image.split(",", 1)[1] if "," in raw_image else raw_image
+        else:
+            base64_data = raw_image
         
-        # Note: Since vision API has limitations, we'll provide a simplified response
-        # In production, this would use actual vision analysis
-        emotions = ["happy", "calm", "excited", "neutral", "energetic", "relaxed"]
-        import random
-        detected_emotion = random.choice(emotions)
+        if base64_data and len(base64_data) > 100:
+            image_content = ImageContent(image_base64=base64_data)
+            user_message = UserMessage(
+                text="Look at this person's face carefully. What emotion are they expressing? Reply with ONLY ONE emotion word.",
+                file_contents=[image_content]
+            )
+            response = await llm_chat.send_message(user_message)
+            detected_emotion = response.strip().lower().split()[0] if response else "neutral"
+        else:
+            # Fallback if image data is too small/invalid
+            detected_emotion = random.choice(["happy", "calm", "excited", "neutral", "energetic", "relaxed"])
         
-        return {"emotion": detected_emotion}
+        # Recommend songs based on detected emotion
+        emotion_song_map = {
+            "happy": "upbeat happy pop songs",
+            "sad": "comforting emotional ballads",
+            "angry": "intense rock metal songs",
+            "calm": "peaceful ambient chill music",
+            "excited": "high energy dance EDM songs",
+            "tired": "gentle relaxing lo-fi music",
+            "neutral": "popular trending songs",
+            "surprised": "exciting dramatic orchestral music",
+            "anxious": "calming meditation music",
+            "energetic": "workout pump up songs",
+            "relaxed": "smooth jazz chill beats",
+            "romantic": "love songs romantic ballads",
+            "melancholic": "sad beautiful piano music"
+        }
+        
+        music_query = emotion_song_map.get(detected_emotion, "popular trending songs")
+        song_url = search_music_video(music_query)
+        
+        return {
+            "emotion": detected_emotion,
+            "song_url": song_url,
+            "music_query": music_query
+        }
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Emotion analysis error: {str(e)}")
+        logging.error(f"Emotion analysis error: {str(e)}")
+        # Fallback to random on error
+        fallback_emotion = random.choice(["happy", "calm", "excited", "neutral"])
+        return {"emotion": fallback_emotion, "song_url": None, "music_query": None}
 
 @api_router.post("/generate-quiz")
 async def generate_quiz(
@@ -419,9 +486,9 @@ async def generate_study_plan_pdf(
     
     document_text = plan_data.get("document_text", "")[:5000]
     
-    chat = LlmChat(
+    llm_chat = LlmChat(
         api_key=EMERGENT_KEY,
-        session_id=f"{current_user.user_id}_study_plan",
+        session_id=f"{current_user.user_id}_study_plan_{uuid.uuid4().hex[:6]}",
         system_message="You are a study planner. Create comprehensive study plans."
     ).with_model("openai", "gpt-5.1")
     
@@ -430,13 +497,14 @@ async def generate_study_plan_pdf(
 {document_text}
 
 Include:
-★ Main concepts and topics
-★ Study schedule recommendation  
-★ Key points to remember
-★ Practice questions"""
+- Main concepts and topics
+- Study schedule recommendation  
+- Key points to remember
+- Practice questions"""
     
-    response = await chat.send_message(UserMessage(text=prompt))
+    response = await llm_chat.send_message(UserMessage(text=prompt))
     
+    # Generate PDF
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
@@ -451,20 +519,40 @@ Include:
         spaceAfter=30
     )
     
-    story.append(Paragraph("Study Plan", title_style))
+    story.append(Paragraph("BRUH Study Plan", title_style))
     story.append(Spacer(1, 0.2*inch))
     
     content_style = styles['BodyText']
     for line in response.split('\n'):
         if line.strip():
-            story.append(Paragraph(line, content_style))
-            story.append(Spacer(1, 0.1*inch))
+            # Escape XML special chars for reportlab
+            safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            try:
+                story.append(Paragraph(safe_line, content_style))
+                story.append(Spacer(1, 0.1*inch))
+            except Exception:
+                story.append(Paragraph(safe_line[:200], content_style))
     
     doc.build(story)
     buffer.seek(0)
+    pdf_bytes = buffer.read()
     
-    path = f"{APP_NAME}/study-plans/{current_user.user_id}/{uuid.uuid4()}.pdf"
-    result = put_object(path, buffer.read(), "application/pdf")
+    # Upload to storage
+    storage_path = f"{APP_NAME}/study-plans/{current_user.user_id}/{uuid.uuid4()}.pdf"
+    result = put_object(storage_path, pdf_bytes, "application/pdf")
+    
+    # Save to files collection so download endpoint works
+    file_doc = {
+        "file_id": str(uuid.uuid4()),
+        "user_id": current_user.user_id,
+        "storage_path": result["path"],
+        "original_filename": "study_plan.pdf",
+        "content_type": "application/pdf",
+        "size": result.get("size", len(pdf_bytes)),
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.files.insert_one(file_doc)
     
     return {
         "study_plan": response,
@@ -574,80 +662,72 @@ async def download_file(
     try:
         await get_current_user(authorization, auth, session_token)
         
+        # Try to find record in files collection
         record = await db.files.find_one({"storage_path": path, "is_deleted": False}, {"_id": 0})
-        if not record:
-            raise HTTPException(status_code=404, detail="File not found")
         
         data, content_type = get_object(path)
-        return Response(content=data, media_type=record.get("content_type", content_type))
+        
+        # Use record content_type if available, otherwise use what storage returns
+        final_content_type = record.get("content_type", content_type) if record else content_type
+        filename = record.get("original_filename", "download") if record else "download"
+        
+        return Response(
+            content=data, 
+            media_type=final_content_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.post("/generate-study-plan")
-async def generate_study_plan(
-    document_text: str = Query(...),
+@api_router.post("/extract-text")
+async def extract_text(
+    file_data: dict,
     authorization: str = Header(None),
     auth: str = Query(None),
     session_token: str = Cookie(None)
 ):
+    """Extract text from uploaded PDF or document files"""
+    await get_current_user(authorization, auth, session_token)
+    
+    file_url = file_data.get("file_url", "")
+    
     try:
-        current_user = await get_current_user(authorization, auth, session_token)
+        # Get file from storage
+        storage_path = file_url.replace("/api/files/", "")
+        data, content_type = get_object(storage_path)
         
-        chat = LlmChat(
-            api_key=EMERGENT_KEY,
-            session_id=f"{current_user.user_id}_study_planner",
-            system_message="You are a study planner. Create comprehensive study plans from documents."
-        ).with_model("openai", "gpt-5.1")
+        extracted_text = ""
         
-        prompt = f"""Analyze this document and create a detailed study plan:
-
-{document_text[:5000]}
-
-Provide:
-★ Main concepts and topics
-★ Study schedule recommendation
-★ Key points to remember
-★ Practice questions"""
+        if "pdf" in content_type.lower() or storage_path.endswith(".pdf"):
+            # Extract text from PDF
+            pdf_reader = PdfReader(BytesIO(data))
+            for page in pdf_reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    extracted_text += page_text + "\n"
+        elif "text" in content_type.lower() or storage_path.endswith(".txt"):
+            extracted_text = data.decode("utf-8", errors="ignore")
+        elif "word" in content_type.lower() or storage_path.endswith(".docx"):
+            try:
+                from docx import Document as DocxDocument
+                doc = DocxDocument(BytesIO(data))
+                extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])
+            except Exception:
+                extracted_text = "Could not extract text from this document format."
+        else:
+            extracted_text = data.decode("utf-8", errors="ignore")[:5000]
         
-        response = await chat.send_message(UserMessage(text=prompt))
+        if not extracted_text.strip():
+            extracted_text = "No readable text found in this file."
         
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
-        styles = getSampleStyleSheet()
-        story = []
-        
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor='#1A1A1A',
-            alignment=TA_CENTER,
-            spaceAfter=30
-        )
-        
-        story.append(Paragraph("Study Plan", title_style))
-        story.append(Spacer(1, 0.2*inch))
-        
-        content_style = styles['BodyText']
-        for line in response.split('\n'):
-            if line.strip():
-                story.append(Paragraph(line, content_style))
-                story.append(Spacer(1, 0.1*inch))
-        
-        doc.build(story)
-        buffer.seek(0)
-        
-        path = f"{APP_NAME}/study-plans/{current_user.user_id}/{uuid.uuid4()}.pdf"
-        result = put_object(path, buffer.read(), "application/pdf")
-        
-        return {
-            "study_plan": response,
-            "pdf_url": f"/api/files/{result['path']}"
-        }
+        return {"text": extracted_text[:10000]}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"Text extraction error: {str(e)}")
+        return {"text": f"Could not extract text: {str(e)}"}
 
 @api_router.get("/tasks")
 async def get_tasks(
@@ -678,6 +758,8 @@ async def create_task(
     }
     
     await db.tasks.insert_one(task)
+    # Remove MongoDB _id before returning
+    task.pop("_id", None)
     return task
 
 @api_router.patch("/tasks/{task_id}")
@@ -738,6 +820,8 @@ async def create_note(
     }
     
     await db.notes.insert_one(note)
+    # Remove MongoDB _id before returning
+    note.pop("_id", None)
     return note
 
 @api_router.patch("/notes/{note_id}")
@@ -800,6 +884,8 @@ async def create_event(
     }
     
     await db.events.insert_one(event)
+    # Remove MongoDB _id before returning
+    event.pop("_id", None)
     return event
 
 @api_router.delete("/events/{event_id}")

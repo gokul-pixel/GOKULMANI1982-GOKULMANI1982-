@@ -37,6 +37,8 @@ export default function Dashboard() {
   const [selectedLanguage, setSelectedLanguage] = useState("en");
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editedContent, setEditedContent] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [currentFileContent, setCurrentFileContent] = useState("");
   const messagesEndRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -102,26 +104,32 @@ export default function Dashboard() {
     }
   };
 
-  const sendMessage = async () => {
-    if ((!inputMessage.trim() && !uploadedImage) || isLoading) return;
+  const sendMessage = async (overrideMessage = null) => {
+    const msgToSend = overrideMessage || inputMessage;
+    if ((!msgToSend.trim() && !uploadedImage) || isLoading) return;
 
     const userMsg = {
       role: "user",
-      content: inputMessage || "Analyze this image",
+      content: msgToSend || "Analyze this image",
       image_url: imagePreview,
       timestamp: new Date().toISOString()
     };
 
     setMessages(prev => [...prev, userMsg]);
-    const messageToSend = inputMessage;
-    setInputMessage("");
+    const messageToSend = msgToSend;
+    if (!overrideMessage) setInputMessage("");
     const currentImage = uploadedImage;
-    const currentPreview = imagePreview;
     setUploadedImage(null);
     setImagePreview(null);
     setIsLoading(true);
 
     try {
+      // Build file context from uploaded files
+      let fileContext = "";
+      if (uploadedFiles.length > 0) {
+        fileContext = uploadedFiles.map(f => f.content).join("\n\n---\n\n");
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/chat`, {
         method: 'POST',
         headers: {
@@ -133,7 +141,9 @@ export default function Dashboard() {
           bot_type: currentBot,
           ai_model: selectedModel,
           mode: selectedMode,
-          image_data: currentImage
+          image_data: currentImage,
+          file_context: fileContext || null,
+          language: selectedLanguage
         })
       });
 
@@ -141,7 +151,10 @@ export default function Dashboard() {
 
       const data = await response.json();
       
-      // Do NOT auto-speak - user controls when to speak
+      // Auto-speak response if speaker is enabled
+      if (speakerEnabled) {
+        speakText(data.message, selectedVoice);
+      }
       
       // For cooking bot, get video if available
       if (currentBot === 'cook' && data.video_url) {
@@ -152,7 +165,6 @@ export default function Dashboard() {
           timestamp: new Date().toISOString()
         }]);
       } else if (currentBot === 'music' && data.song_url) {
-        // For music bot, play the song
         setCurrentSong(data.song_url);
         setIsPlaying(true);
         setMessages(prev => [...prev, {
@@ -192,6 +204,7 @@ export default function Dashboard() {
       };
       reader.readAsDataURL(file);
     } else {
+      // Handle document upload
       const formData = new FormData();
       formData.append('file', file);
 
@@ -206,15 +219,39 @@ export default function Dashboard() {
 
         const data = await response.json();
         
+        // Extract text from file
+        const textResponse = await fetch(`${BACKEND_URL}/api/extract-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ file_url: data.url })
+        });
+        
+        if (textResponse.ok) {
+          const textData = await textResponse.json();
+          setCurrentFileContent(textData.text);
+          
+          // Add to uploaded files list
+          setUploadedFiles(prev => [...prev, {
+            name: file.name,
+            url: data.url,
+            content: textData.text
+          }]);
+        }
+        
         if (currentBot === 'student' && teacherMode) {
-          const text = await file.text();
-          generateQuiz(text);
-        } else {
-          setInputMessage(prev => prev + ` [Uploaded: ${file.name}]`);
+          generateQuiz(textData.text || "");
         }
       } catch (error) {
         console.error('Upload failed:', error);
       }
+    }
+  };
+
+  const removeFile = (fileName) => {
+    setUploadedFiles(prev => prev.filter(f => f.name !== fileName));
+    if (uploadedFiles.length === 1) {
+      setCurrentFileContent("");
     }
   };
 
@@ -283,13 +320,20 @@ export default function Dashboard() {
 
   const generateStudyPDF = async () => {
     try {
+      setIsLoading(true);
       const chatHistory = messages.map(m => m.content).join('\n\n');
+      
+      // Include file context if available
+      let documentText = chatHistory;
+      if (uploadedFiles.length > 0) {
+        documentText = uploadedFiles.map(f => `File: ${f.name}\n${f.content}`).join('\n\n---\n\n') + '\n\n---\n\nChat History:\n' + chatHistory;
+      }
       
       const response = await fetch(`${BACKEND_URL}/api/generate-study-plan`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ document_text: chatHistory })
+        body: JSON.stringify({ document_text: documentText })
       });
 
       if (response.ok) {
@@ -297,12 +341,48 @@ export default function Dashboard() {
         
         setMessages(prev => [...prev, {
           role: "assistant",
-          content: `📄 **Study Plan PDF Generated!**\n\n${data.study_plan}\n\n[Download PDF](${BACKEND_URL}${data.pdf_url})`,
+          content: data.study_plan,
+          pdf_url: data.pdf_url,
           timestamp: new Date().toISOString()
         }]);
+        
+        if (speakerEnabled) {
+          speakText("Your study plan PDF has been generated! Click the download button to save it.");
+        }
+      } else {
+        throw new Error('PDF generation failed');
       }
     } catch (error) {
       console.error('PDF generation failed:', error);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Sorry, I couldn't generate the PDF. Please try again.",
+        timestamp: new Date().toISOString()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const downloadPDF = async (pdfUrl) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}${pdfUrl}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) throw new Error('Download failed');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'study_plan.pdf';
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PDF download failed:', error);
+      alert('Failed to download PDF. Please try again.');
     }
   };
 
@@ -348,7 +428,29 @@ export default function Dashboard() {
     
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Make it more friendly and conversational
+      let friendlyText = text;
+      
+      // Add friendly greetings based on voice
+      const greetings = {
+        'gojo': ["Hey there!", "Listen up!", "Check this out!", "Yo!"],
+        'noelle': ["Hi friend!", "Oh hello!", "Hey sweetie!", "Listen!"]
+      };
+      
+      // Randomly add a greeting sometimes (20% chance)
+      if (Math.random() < 0.2) {
+        const greeting = greetings[voice][Math.floor(Math.random() * greetings[voice].length)];
+        friendlyText = `${greeting} ${text}`;
+      }
+      
+      // Add friendly pauses and emphasis
+      friendlyText = friendlyText
+        .replace(/\./g, '... ')
+        .replace(/!/g, '! ')
+        .replace(/\?/g, '? ');
+      
+      const utterance = new SpeechSynthesisUtterance(friendlyText);
       
       // Set language
       const langMap = {
@@ -369,17 +471,20 @@ export default function Dashboard() {
       if (voice === 'gojo') {
         const maleVoice = voices.find(v => v.name.includes('Male') || v.name.includes('David') || v.name.includes('Daniel'));
         if (maleVoice) utterance.voice = maleVoice;
-        utterance.pitch = 0.9;
-        utterance.rate = 1.1;
+        utterance.pitch = 0.95;
+        utterance.rate = 1.15;
+        utterance.volume = 0.9;
       } else if (voice === 'noelle') {
         const femaleVoice = voices.find(v => v.name.includes('Female') || v.name.includes('Samantha') || v.name.includes('Victoria'));
         if (femaleVoice) utterance.voice = femaleVoice;
-        utterance.pitch = 1.2;
-        utterance.rate = 1.0;
+        utterance.pitch = 1.15;
+        utterance.rate = 1.05;
+        utterance.volume = 0.9;
       }
       
       utterance.onstart = () => setIsSpeaking(true);
       utterance.onend = () => setIsSpeaking(false);
+      utterance.onerror = () => setIsSpeaking(false);
       
       window.speechSynthesis.speak(utterance);
     }
@@ -434,47 +539,88 @@ export default function Dashboard() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
         
-        const detectEmotion = async () => {
-          if (!isCameraActive || !videoRef.current || !canvasRef.current) return;
-          
-          const canvas = canvasRef.current;
-          const video = videoRef.current;
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(video, 0, 0);
-          
-          const imageData = canvas.toDataURL('image/jpeg');
-          
-          try {
-            const response = await fetch(`${BACKEND_URL}/api/analyze-emotion`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              credentials: 'include',
-              body: JSON.stringify({ image_data: imageData })
-            });
-            
-            if (response.ok) {
-              const data = await response.json();
-              setEmotionDetected(data.emotion);
-              setInputMessage(`I'm feeling ${data.emotion}. Recommend me some music!`);
-            }
-          } catch (error) {
-            console.error('Emotion detection error:', error);
-          }
-        };
-        
-        const interval = setInterval(detectEmotion, 3000);
-        
-        return () => {
-          clearInterval(interval);
-          stream.getTracks().forEach(track => track.stop());
-        };
+        // Run first detection after a short delay for camera to warm up
+        setTimeout(async () => {
+          await detectEmotionFromCamera();
+        }, 2000);
       }
     } catch (error) {
       console.error('Camera access error:', error);
       alert('Camera access denied. Please allow camera permissions.');
       setIsCameraActive(false);
+    }
+  };
+
+  const detectEmotionFromCamera = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+    
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0);
+    
+    const imageData = canvas.toDataURL('image/jpeg', 0.7);
+    
+    try {
+      setMessages(prev => [...prev, {
+        role: "user",
+        content: "Analyzing your face for emotions...",
+        timestamp: new Date().toISOString()
+      }]);
+      setIsLoading(true);
+      
+      const response = await fetch(`${BACKEND_URL}/api/analyze-emotion`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ image_data: imageData })
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setEmotionDetected(data.emotion);
+        
+        // Show emotion result and auto-send music request
+        const emotionMsg = `I detected you're feeling ${data.emotion}! Let me find the perfect music for your mood...`;
+        
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: emotionMsg,
+          timestamp: new Date().toISOString()
+        }]);
+        
+        // If a song URL was returned directly from emotion analysis, show it
+        if (data.song_url) {
+          setCurrentSong(data.song_url);
+          setIsPlaying(true);
+          setMessages(prev => [...prev, {
+            role: "assistant",
+            content: `Here's a ${data.emotion} vibe track for you:`,
+            song_url: data.song_url,
+            timestamp: new Date().toISOString()
+          }]);
+        }
+        
+        // Also send a chat message to get AI music recommendations
+        setIsLoading(false);
+        await sendMessage(`I'm feeling ${data.emotion}. Recommend me some music that matches this mood!`);
+        
+        // Auto-speak if enabled
+        if (speakerEnabled) {
+          speakText(`I can see you're feeling ${data.emotion}! Let me pick some great music for you!`);
+        }
+      }
+    } catch (error) {
+      console.error('Emotion detection error:', error);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "I had trouble reading your expression. Try again with better lighting!",
+        timestamp: new Date().toISOString()
+      }]);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -584,12 +730,20 @@ export default function Dashboard() {
   return (
     <div className="h-screen flex" style={{ backgroundColor: '#FFFDF9', fontFamily: 'DM Sans, sans-serif' }}>
       {/* Sidebar */}
-      <div className="w-80 border-r-2 border-black flex flex-col" style={{ backgroundColor: '#FFFDF9' }}>
+      <motion.div 
+        initial={{ x: -320 }}
+        animate={{ x: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="w-80 border-r-2 border-black flex flex-col" style={{ backgroundColor: '#FFFDF9' }}>
         {/* Header */}
         <div className="p-8 border-b-2 border-black">
-          <h1 className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
+          <motion.h1 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
             BRUH
-          </h1>
+          </motion.h1>
         </div>
 
         {/* Bot Selection - Ultra Compact */}
@@ -689,28 +843,53 @@ export default function Dashboard() {
             Logout
           </button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main Chat Area */}
       <div className="flex-1 flex flex-col">
         {/* Chat Header */}
-        <div className="p-8 border-b-2 border-black" style={{ backgroundColor: currentBotConfig.color }}>
+        <motion.div 
+          initial={{ opacity: 0, y: -30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.2 }}
+          className="p-8 border-b-2 border-black" style={{ backgroundColor: currentBotConfig.color }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {currentBotConfig.avatar ? (
-                <img src={currentBotConfig.avatar} alt={currentBotConfig.name} className="w-16 h-16 rounded-full border-2 border-black" />
+                <motion.img 
+                  key={currentBot}
+                  initial={{ scale: 0, rotate: -180 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: "spring", stiffness: 200 }}
+                  src={currentBotConfig.avatar} alt={currentBotConfig.name} className="w-16 h-16 rounded-full border-2 border-black" />
               ) : (
-                <div className="w-16 h-16 rounded-full border-2 border-black bg-white flex items-center justify-center">
+                <motion.div 
+                  key={currentBot}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", stiffness: 200 }}
+                  className="w-16 h-16 rounded-full border-2 border-black bg-white flex items-center justify-center">
                   <BotIcon className="w-8 h-8" strokeWidth={2.5} />
-                </div>
+                </motion.div>
               )}
-              <div>
+              <motion.div
+                key={`info-${currentBot}`}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.3 }}
+              >
                 <h2 className="text-2xl font-bold" style={{ fontFamily: 'Outfit, sans-serif' }}>{currentBotConfig.name}</h2>
                 <p className="text-sm opacity-80">{currentBotConfig.description}</p>
                 {currentBot === "music" && emotionDetected && (
-                  <p className="text-sm font-bold mt-1">Detected Emotion: {emotionDetected} 🎵</p>
+                  <motion.p 
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="text-sm font-bold mt-1 px-2 py-1 bg-yellow-200 rounded-lg inline-block border border-black"
+                  >
+                    Emotion: {emotionDetected}
+                  </motion.p>
                 )}
-              </div>
+              </motion.div>
             </div>
             <div className="flex gap-2">
               {currentBot === "music" && (
@@ -731,30 +910,41 @@ export default function Dashboard() {
                   onClick={() => {
                     setSelectedVoice('gojo');
                     setSpeakerEnabled(true);
+                    setTimeout(() => speakText("Yo! I'm Gojo, your AI companion! What's up? Let's chat!", 'gojo'), 300);
                   }}
                   className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
-                    selectedVoice === 'gojo' ? 'bg-blue-500 text-white' : 'bg-white'
+                    selectedVoice === 'gojo' && speakerEnabled ? 'bg-blue-500 text-white' : 'bg-white'
                   }`}
                   data-testid="voice-gojo-btn"
                 >
-                  🗣️ Gojo (Male)
+                  Gojo (Male)
                 </button>
                 <button
                   onClick={() => {
                     setSelectedVoice('noelle');
                     setSpeakerEnabled(true);
+                    setTimeout(() => speakText("Hi there! I'm Noelle, your friendly AI assistant! How can I help you today?", 'noelle'), 300);
                   }}
                   className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
-                    selectedVoice === 'noelle' ? 'bg-pink-500 text-white' : 'bg-white'
+                    selectedVoice === 'noelle' && speakerEnabled ? 'bg-pink-500 text-white' : 'bg-white'
                   }`}
                   data-testid="voice-noelle-btn"
                 >
-                  🗣️ Noelle (Female)
+                  Noelle (Female)
                 </button>
                 <button
-                  onClick={isSpeaking ? stopSpeaking : null}
+                  onClick={() => {
+                    if (isSpeaking) {
+                      stopSpeaking();
+                    } else {
+                      setSpeakerEnabled(!speakerEnabled);
+                      if (!speakerEnabled) {
+                        setTimeout(() => speakText(selectedVoice === 'gojo' ? "Speaker on! I'm ready to talk!" : "Speaker activated! Let's have a conversation!"), 300);
+                      }
+                    }
+                  }}
                   className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
-                    isSpeaking ? 'bg-green-500 text-white animate-pulse' : 'bg-white'
+                    isSpeaking ? 'bg-green-500 text-white animate-pulse' : speakerEnabled ? 'bg-green-400 text-white' : 'bg-white'
                   }`}
                   data-testid="speaker-status-btn"
                 >
@@ -806,21 +996,102 @@ export default function Dashboard() {
           
           {/* Camera preview for Music Companion */}
           {currentBot === "music" && isCameraActive && (
-            <div className="mt-4 relative">
-              <video 
-                ref={videoRef}
-                className="w-48 h-36 rounded-lg border-2 border-black object-cover"
-                autoPlay
-                playsInline
-                muted
-              />
-              <canvas ref={canvasRef} className="hidden" />
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-4 flex items-center gap-4"
+            >
+              <div className="relative">
+                <video 
+                  ref={videoRef}
+                  className="w-48 h-36 rounded-lg border-2 border-black object-cover"
+                  autoPlay
+                  playsInline
+                  muted
+                />
+                <canvas ref={canvasRef} className="hidden" />
+                {emotionDetected && (
+                  <motion.div 
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-3 -right-3 px-3 py-1 bg-yellow-300 border-2 border-black rounded-full font-bold text-sm shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    {emotionDetected}
+                  </motion.div>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={detectEmotionFromCamera}
+                  disabled={isLoading}
+                  className="px-4 py-2 rounded-xl border-2 border-black bg-yellow-300 hover:bg-yellow-400 font-bold text-sm shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all disabled:opacity-50"
+                  data-testid="scan-face-btn"
+                >
+                  {isLoading ? 'Analyzing...' : 'Scan My Face'}
+                </motion.button>
+                <p className="text-xs opacity-70 max-w-[200px]">
+                  {emotionDetected 
+                    ? `Detected: ${emotionDetected} - Music is playing!` 
+                    : 'Click to analyze your expression and get music!'}
+                </p>
+              </div>
+            </motion.div>
           )}
-        </div>
+        </motion.div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-8 space-y-6" data-testid="messages-container">
+          {/* Uploaded Files Section - At Top */}
+          {uploadedFiles.length > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-bold flex items-center gap-2" style={{ fontFamily: 'Outfit, sans-serif' }}>
+                  📎 Uploaded Files
+                </h3>
+              </div>
+              <div className="space-y-2">
+                {uploadedFiles.map((file, idx) => (
+                  <motion.div
+                    key={idx}
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: idx * 0.1 }}
+                    className="flex items-center justify-between p-3 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{file.name}</p>
+                      <p className="text-xs opacity-70">{file.content.substring(0, 100)}...</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <motion.button
+                        whileHover={{ scale: 1.1, rotate: 5 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => setInputMessage(prev => prev + `\n\nFile content:\n${file.content.substring(0, 500)}`)}
+                        className="px-3 py-2 rounded-lg border-2 border-black bg-blue-200 hover:bg-blue-300 font-bold text-sm"
+                      >
+                        Use
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => removeFile(file.name)}
+                        className="p-2 rounded-lg border-2 border-black bg-red-200 hover:bg-red-300"
+                      >
+                        <X className="w-4 h-4" strokeWidth={2.5} />
+                      </motion.button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+          
           {messages.length === 0 ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-md">
@@ -943,13 +1214,31 @@ export default function Dashboard() {
                       >
                         <iframe
                           width="100%"
-                          height="80"
+                          height="200"
                           src={msg.song_url}
                           frameBorder="0"
                           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
                           className="rounded-lg border-2 border-black"
                         ></iframe>
                       </motion.div>
+                    )}
+                    
+                    {/* PDF download button */}
+                    {msg.pdf_url && (
+                      <motion.button
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.5 }}
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => downloadPDF(msg.pdf_url)}
+                        className="mt-4 px-6 py-3 rounded-xl border-2 border-black bg-green-400 hover:bg-green-500 font-bold text-sm shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all flex items-center gap-2"
+                        data-testid="download-pdf-btn"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        Download Study Plan PDF
+                      </motion.button>
                     )}
                   </div>
                 ) : (
@@ -986,7 +1275,11 @@ export default function Dashboard() {
         </div>
 
         {/* Input Area */}
-        <div className="p-8 bg-white border-t-2 border-black">
+        <motion.div 
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.3 }}
+          className="p-8 bg-white border-t-2 border-black">
           {imagePreview && (
             <div className="mb-4 relative inline-block">
               <img 
@@ -1067,8 +1360,8 @@ export default function Dashboard() {
               </div>
             </div>
             <motion.button
-              onClick={sendMessage}
-              disabled={!inputMessage.trim() || isLoading}
+              onClick={() => sendMessage()}
+              disabled={(!inputMessage.trim() && !uploadedImage) || isLoading}
               whileHover={{ scale: 1.05, rotate: 2 }}
               whileTap={{ scale: 0.95, rotate: -2 }}
               className="px-8 py-5 font-bold rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white"
@@ -1083,7 +1376,7 @@ export default function Dashboard() {
               </motion.div>
             </motion.button>
           </div>
-        </div>
+        </motion.div>
       </div>
 
       {/* Settings Modal */}
