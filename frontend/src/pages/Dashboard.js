@@ -33,6 +33,8 @@ export default function Dashboard() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState("gojo");
+  const [speakerEnabled, setSpeakerEnabled] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState("en");
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editedContent, setEditedContent] = useState("");
   const messagesEndRef = useRef(null);
@@ -139,10 +141,7 @@ export default function Dashboard() {
 
       const data = await response.json();
       
-      // Speak the response
-      if (data.message) {
-        speakText(data.message);
-      }
+      // Do NOT auto-speak - user controls when to speak
       
       // For cooking bot, get video if available
       if (currentBot === 'cook' && data.video_url) {
@@ -343,9 +342,26 @@ export default function Dashboard() {
   };
 
   const speakText = (text, voice = selectedVoice) => {
+    if (!speakerEnabled) return;
+    
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+      
+      // Set language
+      const langMap = {
+        'en': 'en-US',
+        'hi': 'hi-IN',
+        'ta': 'ta-IN',
+        'te': 'te-IN',
+        'bn': 'bn-IN',
+        'mr': 'mr-IN',
+        'gu': 'gu-IN',
+        'kn': 'kn-IN',
+        'ml': 'ml-IN',
+        'pa': 'pa-IN'
+      };
+      utterance.lang = langMap[selectedLanguage] || 'en-US';
       
       const voices = window.speechSynthesis.getVoices();
       if (voice === 'gojo') {
@@ -395,6 +411,17 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Failed to delete conversation:', error);
     }
+  };
+
+  const saveEditedMessage = async (messageId) => {
+    if (!editedContent.trim()) return;
+    
+    const updatedMessages = messages.map(msg => 
+      msg.message_id === messageId ? { ...msg, content: editedContent } : msg
+    );
+    setMessages(updatedMessages);
+    setEditingMessageId(null);
+    setEditedContent("");
   };
 
   const startEmotionDetection = async () => {
@@ -813,6 +840,18 @@ export default function Dashboard() {
                       <motion.button
                         whileHover={{ scale: 1.2 }}
                         whileTap={{ scale: 0.9 }}
+                        onClick={() => {
+                          setEditingMessageId(msg.message_id);
+                          setEditedContent(msg.content);
+                        }}
+                        className="p-1 rounded bg-yellow-200 hover:bg-yellow-300"
+                        data-testid="edit-msg-btn"
+                      >
+                        <Edit2 className="w-4 h-4" strokeWidth={2.5} />
+                      </motion.button>
+                      <motion.button
+                        whileHover={{ scale: 1.2 }}
+                        whileTap={{ scale: 0.9 }}
                         onClick={() => copyMessage(msg.content)}
                         className="p-1 rounded bg-gray-200 hover:bg-gray-300"
                         data-testid="copy-msg-btn"
@@ -823,17 +862,47 @@ export default function Dashboard() {
                         whileHover={{ scale: 1.2 }}
                         whileTap={{ scale: 0.9 }}
                         onClick={() => speakText(msg.content)}
-                        className="p-1 rounded bg-blue-200 hover:bg-blue-300"
+                        disabled={!speakerEnabled}
+                        className={`p-1 rounded ${speakerEnabled ? 'bg-blue-200 hover:bg-blue-300' : 'bg-gray-100 cursor-not-allowed'}`}
                         data-testid="speak-msg-btn"
                       >
                         <Volume2 className="w-4 h-4" strokeWidth={2.5} />
                       </motion.button>
                     </div>
-                    <div className="prose prose-sm max-w-none">
-                      <ReactMarkdown>
-                        {msg.content}
-                      </ReactMarkdown>
-                    </div>
+                    
+                    {editingMessageId === msg.message_id ? (
+                      <div className="space-y-3">
+                        <textarea
+                          value={editedContent}
+                          onChange={(e) => setEditedContent(e.target.value)}
+                          className="w-full p-3 border-2 border-black rounded-xl font-medium min-h-[100px]"
+                          data-testid="edit-textarea"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => saveEditedMessage(msg.message_id)}
+                            className="px-4 py-2 rounded-xl border-2 border-black bg-green-200 hover:bg-green-300 font-bold text-sm"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingMessageId(null);
+                              setEditedContent("");
+                            }}
+                            className="px-4 py-2 rounded-xl border-2 border-black bg-gray-200 hover:bg-gray-300 font-bold text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="prose prose-sm max-w-none">
+                        <ReactMarkdown>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
                     
                     {/* Video embed for cooking bot */}
                     {msg.video_url && (
@@ -1055,6 +1124,47 @@ export default function Dashboard() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Language</label>
+                  <select
+                    value={selectedLanguage}
+                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                    className="w-full p-3 border-2 border-black rounded-xl font-medium focus:outline-none"
+                    data-testid="language-select"
+                  >
+                    <option value="en">English</option>
+                    <option value="hi">हिन्दी (Hindi)</option>
+                    <option value="ta">தமிழ் (Tamil)</option>
+                    <option value="te">తెలుగు (Telugu)</option>
+                    <option value="bn">বাংলা (Bengali)</option>
+                    <option value="mr">मराठी (Marathi)</option>
+                    <option value="gu">ગુજરાતી (Gujarati)</option>
+                    <option value="kn">ಕನ್ನಡ (Kannada)</option>
+                    <option value="ml">മലയാളം (Malayalam)</option>
+                    <option value="pa">ਪੰਜਾਬੀ (Punjabi)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Speaker</label>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => setSpeakerEnabled(!speakerEnabled)}
+                      className={`px-6 py-3 rounded-xl border-2 border-black font-bold transition-all ${
+                        speakerEnabled 
+                          ? 'bg-green-500 text-white shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]' 
+                          : 'bg-gray-200 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]'
+                      }`}
+                      data-testid="speaker-toggle"
+                    >
+                      {speakerEnabled ? '🔊 ON' : '🔇 OFF'}
+                    </button>
+                    <span className="text-sm opacity-70">
+                      {speakerEnabled ? 'Speaker enabled' : 'Speaker disabled'}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-sm font-bold mb-2" style={{ fontFamily: 'Outfit, sans-serif' }}>Theme</label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
@@ -1090,6 +1200,31 @@ export default function Dashboard() {
                     >
                       Cool Blue
                     </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-bold mb-3" style={{ fontFamily: 'Outfit, sans-serif' }}>Alternative Login</label>
+                  <div className="space-y-3">
+                    <input
+                      type="email"
+                      placeholder="Email address"
+                      className="w-full p-3 border-2 border-black rounded-xl font-medium focus:outline-none"
+                      data-testid="email-input"
+                    />
+                    <input
+                      type="tel"
+                      placeholder="Phone number"
+                      className="w-full p-3 border-2 border-black rounded-xl font-medium focus:outline-none"
+                      data-testid="phone-input"
+                    />
+                    <button
+                      className="w-full px-6 py-3 rounded-xl border-2 border-black bg-blue-500 text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] font-bold"
+                      data-testid="login-submit-btn"
+                    >
+                      Login with Email/Phone
+                    </button>
+                    <p className="text-xs opacity-50 text-center">Coming soon - Currently using Google Auth</p>
                   </div>
                 </div>
               </div>
