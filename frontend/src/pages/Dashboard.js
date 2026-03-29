@@ -29,6 +29,8 @@ export default function Dashboard() {
   const [quizQuestions, setQuizQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [showQuizResults, setShowQuizResults] = useState(false);
+  const [currentSong, setCurrentSong] = useState(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const messagesEndRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -105,6 +107,7 @@ export default function Dashboard() {
     };
 
     setMessages(prev => [...prev, userMsg]);
+    const messageToSend = inputMessage;
     setInputMessage("");
     const currentImage = uploadedImage;
     const currentPreview = imagePreview;
@@ -120,7 +123,7 @@ export default function Dashboard() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          message: inputMessage || "Please analyze this image",
+          message: messageToSend || "Please analyze this image",
           bot_type: currentBot,
           ai_model: selectedModel,
           mode: selectedMode,
@@ -132,11 +135,31 @@ export default function Dashboard() {
 
       const data = await response.json();
       
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: data.message,
-        timestamp: new Date().toISOString()
-      }]);
+      // For cooking bot, get video if available
+      if (currentBot === 'cook' && data.video_url) {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.message,
+          video_url: data.video_url,
+          timestamp: new Date().toISOString()
+        }]);
+      } else if (currentBot === 'music' && data.song_url) {
+        // For music bot, play the song
+        setCurrentSong(data.song_url);
+        setIsPlaying(true);
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.message,
+          song_url: data.song_url,
+          timestamp: new Date().toISOString()
+        }]);
+      } else {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: data.message,
+          timestamp: new Date().toISOString()
+        }]);
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
       setMessages(prev => [...prev, {
@@ -450,15 +473,6 @@ export default function Dashboard() {
           <h1 className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
             BRUH
           </h1>
-          <div className="flex items-center gap-3">
-            {user?.picture && (
-              <img src={user.picture} alt={user.name} className="w-10 h-10 rounded-full border-2 border-black" />
-            )}
-            <div className="flex-1 min-w-0">
-              <p className="font-bold text-sm truncate" style={{ fontFamily: 'Outfit, sans-serif' }}>{user?.name}</p>
-              <p className="text-xs truncate opacity-70">{user?.email}</p>
-            </div>
-          </div>
         </div>
 
         {/* Bot Selection - Ultra Compact */}
@@ -467,10 +481,12 @@ export default function Dashboard() {
             {Object.entries(botConfigs).map(([key, config]) => {
               const Icon = config.icon;
               return (
-                <button
+                <motion.button
                   key={key}
                   onClick={() => setCurrentBot(key)}
                   title={config.name}
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  whileTap={{ scale: 0.95 }}
                   className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 border-black font-bold flex items-center justify-center transition-all ${
                     currentBot === key
                       ? 'shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5 scale-110'
@@ -481,8 +497,13 @@ export default function Dashboard() {
                   }}
                   data-testid={`bot-${key}-btn`}
                 >
-                  <Icon className="w-6 h-6" strokeWidth={2.5} />
-                </button>
+                  <motion.div
+                    animate={currentBot === key ? { rotate: [0, 10, -10, 0] } : {}}
+                    transition={{ duration: 0.5 }}
+                  >
+                    <Icon className="w-6 h-6" strokeWidth={2.5} />
+                  </motion.div>
+                </motion.button>
               );
             })}
           </div>
@@ -649,9 +670,9 @@ export default function Dashboard() {
             messages.map((msg, idx) => (
               <motion.div
                 key={idx}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.4, ease: "easeOut" }}
                 className={msg.role === "user" ? "flex justify-end" : "flex justify-start"}
                 data-testid={`message-${idx}`}
               >
@@ -662,11 +683,54 @@ export default function Dashboard() {
                         {msg.content}
                       </ReactMarkdown>
                     </div>
+                    
+                    {/* Video embed for cooking bot */}
+                    {msg.video_url && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        transition={{ delay: 0.3 }}
+                        className="mt-4"
+                      >
+                        <iframe
+                          width="100%"
+                          height="315"
+                          src={msg.video_url}
+                          title="Recipe Video"
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          className="rounded-lg border-2 border-black"
+                        ></iframe>
+                      </motion.div>
+                    )}
+                    
+                    {/* Music player for music bot */}
+                    {msg.song_url && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ delay: 0.3, type: "spring" }}
+                        className="mt-4"
+                      >
+                        <iframe
+                          width="100%"
+                          height="80"
+                          src={msg.song_url}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          className="rounded-lg border-2 border-black"
+                        ></iframe>
+                      </motion.div>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-black text-white rounded-2xl rounded-tr-none p-6 max-w-[85%]">
                     {msg.image_url && (
-                      <img 
+                      <motion.img 
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ duration: 0.3 }}
                         src={msg.image_url} 
                         alt="Uploaded" 
                         className="max-w-full rounded-lg mb-3 border-2 border-white"
@@ -734,13 +798,15 @@ export default function Dashboard() {
                   capture="environment"
                   className="hidden"
                 />
-                <button
+                <motion.button
                   onClick={() => cameraInputRef.current?.click()}
+                  whileHover={{ scale: 1.1, rotate: 15 }}
+                  whileTap={{ scale: 0.9 }}
                   className="p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
                   data-testid="camera-btn"
                 >
                   <Camera className="w-5 h-5" strokeWidth={2.5} />
-                </button>
+                </motion.button>
                 <input
                   type="file"
                   ref={fileInputRef}
@@ -748,33 +814,46 @@ export default function Dashboard() {
                   accept="image/*,.pdf,.doc,.docx,.txt"
                   className="hidden"
                 />
-                <button
+                <motion.button
                   onClick={() => fileInputRef.current?.click()}
+                  whileHover={{ scale: 1.1, y: -3 }}
+                  whileTap={{ scale: 0.9 }}
                   className="p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
                   data-testid="upload-btn"
                 >
                   <Upload className="w-5 h-5" strokeWidth={2.5} />
-                </button>
-                <button
+                </motion.button>
+                <motion.button
                   onClick={handleVoiceRecord}
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  animate={isRecording ? { scale: [1, 1.2, 1] } : {}}
+                  transition={{ duration: 0.5, repeat: isRecording ? Infinity : 0 }}
                   className={`p-3 rounded-full border-2 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all ${
                     isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-white'
                   }`}
                   data-testid="mic-btn"
                 >
                   <Mic className="w-5 h-5" strokeWidth={2.5} />
-                </button>
+                </motion.button>
               </div>
             </div>
-            <button
+            <motion.button
               onClick={sendMessage}
               disabled={!inputMessage.trim() || isLoading}
+              whileHover={{ scale: 1.05, rotate: 2 }}
+              whileTap={{ scale: 0.95, rotate: -2 }}
               className="px-8 py-5 font-bold rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] active:translate-y-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all disabled:opacity-50 disabled:cursor-not-allowed text-white"
               style={{ backgroundColor: '#FF5A5F', fontFamily: 'Outfit, sans-serif' }}
               data-testid="send-btn"
             >
-              <Send className="w-6 h-6" strokeWidth={2.5} />
-            </button>
+              <motion.div
+                animate={isLoading ? { rotate: 360 } : {}}
+                transition={{ duration: 1, repeat: isLoading ? Infinity : 0, ease: "linear" }}
+              >
+                <Send className="w-6 h-6" strokeWidth={2.5} />
+              </motion.div>
+            </motion.button>
           </div>
         </div>
       </div>
