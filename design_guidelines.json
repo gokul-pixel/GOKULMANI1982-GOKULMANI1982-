@@ -1,0 +1,82 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 3 (Pastel & Soft) paired with Neo-Brutalism",
+  "design_philosophy": "BRUH ASSISTANT requires a layout that stands out from sterile 'corporate' chat apps. It uses a Neo-Brutalist approach: pastel background blocks, sharp 2px black borders, and hard drop shadows. This makes it incredibly memorable, playful, and distinct, perfectly catering to Gen-Z, students, and casual users without feeling clinical.",
+  "colors": {
+    "background": "#FFFDF9",
+    "foreground": "#1A1A1A",
+    "primary": "#FF5A5F",
+    "bots": {
+      "normal": "#E0E0E0",
+      "student": "#A0C4FF",
+      "crop": "#CAFFBF",
+      "cook": "#FFADAD",
+      "brain": "#FDFFB6"
+    },
+    "surface": "#FFFFFF",
+    "border": "#1A1A1A"
+  },
+  "typography": {
+    "heading_font": "Outfit, sans-serif",
+    "body_font": "DM Sans, sans-serif",
+    "h1": "text-4xl sm:text-5xl font-black tracking-tight",
+    "h2": "text-2xl sm:text-3xl font-bold tracking-tight",
+    "h3": "text-xl sm:text-2xl font-bold",
+    "body": "text-base font-medium leading-relaxed",
+    "small": "text-sm font-semibold tracking-wider uppercase"
+  },
+  "layout_and_spacing": {
+    "sidebar": "w-80 border-r-2 border-black bg-[#FFFDF9] flex flex-col justify-between",
+    "main_chat": "flex-1 flex flex-col bg-[#FFFDF9] overflow-hidden relative",
+    "chat_bubble_ai": "bg-white border-2 border-black rounded-2xl rounded-tl-none p-4 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%]",
+    "chat_bubble_user": "bg-[#1A1A1A] text-white rounded-2xl rounded-tr-none p-4 max-w-[85%] self-end",
+    "input_area": "p-6 bg-white border-t-2 border-black",
+    "input_box": "w-full rounded-full border-2 border-black p-4 pr-32 text-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus:outline-none focus:ring-0",
+    "bento_grid_brain": "grid grid-cols-1 md:grid-cols-4 gap-6 p-8",
+    "spacing_scale": "p-4, p-6, p-8, p-12 - Generous padding inside all bordered containers to prevent text collision."
+  },
+  "motion_and_interaction": {
+    "hover_state": "hover:-translate-y-1 hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] transition-transform duration-200",
+    "active_state": "active:translate-y-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)]",
+    "bot_switch_animation": "framer-motion layoutId for smooth transition between bot modes"
+  },
+  "components": {
+    "buttons": "px-6 py-3 font-bold rounded-xl border-2 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all",
+    "icon_buttons": "p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all",
+    "card": "bg-white border-2 border-black rounded-2xl p-6 shadow-[6px_6px_0px_0px_rgba(0,0,0,1)]",
+    "badge": "px-3 py-1 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+  },
+  "icons": {
+    "library": "lucide-react",
+    "usage": "Use bold stroke widths (2.5 or 3) to match the neo-brutalist aesthetic."
+  },
+  "media": {
+    "student_bot_avatar": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/e65b5c7d-6f8a-446a-b7fd-669077ab5cbc/images/296c5885d2a45d3a0a1a897f1d43de3c1674ff0b0a601decaf9f3ca1156b06e5.png",
+      "description": "3D cute robot with graduation cap"
+    },
+    "crop_bot_avatar": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/e65b5c7d-6f8a-446a-b7fd-669077ab5cbc/images/7364b45832c3e6ac865999cd84c190160bf95701b86ca8d8e4da1d871bd2691a.png",
+      "description": "3D cute robot with a plant growing on top"
+    },
+    "cook_bot_avatar": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/e65b5c7d-6f8a-446a-b7fd-669077ab5cbc/images/30068d8fa3d7067a7042458785c1456f8421a08bb7971bc1dad138e3796754c7.png",
+      "description": "3D cute robot wearing a chef hat"
+    },
+    "healthy_salad_recipe": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/e65b5c7d-6f8a-446a-b7fd-669077ab5cbc/images/01c7f27c18ed3514e683ab1c582bd15b1981da5d352d7c6ab9d45aa4997bb849.png",
+      "description": "Healthy salad bowl for Cook Bot recipe suggestions"
+    }
+  },
+  "specific_instructions_for_main_agent": [
+    "Install and configure 'lucide-react' for all icons.",
+    "Do NOT use soft drop shadows. Only use hard, offset shadows like 'shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]' everywhere.",
+    "The sidebar must be fixed on the left with a hard right border.",
+    "The chat input should have floating action buttons inside it for camera, mic, and document upload.",
+    "Implement 'Brain of BRUH' as a specialized full-screen overlay or distinct bento-grid view with calculator, timer, and notes.",
+    "Ensure the 'Cook Bot' uses the healthy_salad_recipe image when demonstrating recipe suggestions.",
+    "Use distinct pastel colors for each bot mode (e.g., bg-[#A0C4FF] for Student, bg-[#CAFFBF] for Crop) on the main chat area background or header to indicate active mode.",
+    "Headings must use 'Outfit' font, Body must use 'DM Sans'. Update Google Fonts link in index.html.",
+    "Always add data-testid attributes to all interactive elements."
+  ]
+}
