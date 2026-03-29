@@ -312,6 +312,115 @@ async def analyze_emotion(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Emotion analysis error: {str(e)}")
 
+@api_router.post("/generate-quiz")
+async def generate_quiz(
+    quiz_data: dict,
+    authorization: str = Header(None),
+    auth: str = Query(None),
+    session_token: str = Cookie(None)
+):
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    document_text = quiz_data.get("document_text", "")[:5000]
+    
+    chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=f"{current_user.user_id}_quiz",
+        system_message="You are a teacher creating quiz questions. Generate exactly 5 questions with answers and explanations based on the document."
+    ).with_model("openai", "gpt-5.1")
+    
+    prompt = f"""Create 5 quiz questions from this document:
+
+{document_text}
+
+Return a JSON array with this structure:
+[{{"question": "question text", "answer": "correct answer", "explanation": "brief explanation"}}]
+
+Return ONLY the JSON array, no other text."""
+    
+    try:
+        response = await chat.send_message(UserMessage(text=prompt))
+        
+        import json
+        import re
+        json_match = re.search(r'\[.*\]', response, re.DOTALL)
+        if json_match:
+            questions = json.loads(json_match.group())
+        else:
+            questions = [
+                {"question": "What is the main topic?", "answer": "See document", "explanation": "Review the content"},
+                {"question": "What are the key points?", "answer": "Multiple points discussed", "explanation": "Refer to document"}
+            ]
+        
+        return {"questions": questions}
+    except Exception as e:
+        return {"questions": [
+            {"question": "What did you learn?", "answer": "Review your notes", "explanation": str(e)}
+        ]}
+
+@api_router.post("/generate-study-plan")
+async def generate_study_plan_pdf(
+    plan_data: dict,
+    authorization: str = Header(None),
+    auth: str = Query(None),
+    session_token: str = Cookie(None)
+):
+    current_user = await get_current_user(authorization, auth, session_token)
+    
+    document_text = plan_data.get("document_text", "")[:5000]
+    
+    chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=f"{current_user.user_id}_study_plan",
+        system_message="You are a study planner. Create comprehensive study plans."
+    ).with_model("openai", "gpt-5.1")
+    
+    prompt = f"""Create a detailed study plan based on this content:
+
+{document_text}
+
+Include:
+★ Main concepts and topics
+★ Study schedule recommendation  
+★ Key points to remember
+★ Practice questions"""
+    
+    response = await chat.send_message(UserMessage(text=prompt))
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+    
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        textColor='#1A1A1A',
+        alignment=TA_CENTER,
+        spaceAfter=30
+    )
+    
+    story.append(Paragraph("Study Plan", title_style))
+    story.append(Spacer(1, 0.2*inch))
+    
+    content_style = styles['BodyText']
+    for line in response.split('\n'):
+        if line.strip():
+            story.append(Paragraph(line, content_style))
+            story.append(Spacer(1, 0.1*inch))
+    
+    doc.build(story)
+    buffer.seek(0)
+    
+    path = f"{APP_NAME}/study-plans/{current_user.user_id}/{uuid.uuid4()}.pdf"
+    result = put_object(path, buffer.read(), "application/pdf")
+    
+    return {
+        "study_plan": response,
+        "pdf_url": f"/api/files/{result['path']}"
+    }
+
 @api_router.get("/chat/history")
 async def get_chat_history(
     bot_type: str = Query(...),

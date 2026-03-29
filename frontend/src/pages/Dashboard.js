@@ -25,6 +25,10 @@ export default function Dashboard() {
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [emotionDetected, setEmotionDetected] = useState(null);
   const [currentTheme, setCurrentTheme] = useState("light");
+  const [teacherMode, setTeacherMode] = useState(false);
+  const [quizQuestions, setQuizQuestions] = useState([]);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [showQuizResults, setShowQuizResults] = useState(false);
   const messagesEndRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -149,9 +153,7 @@ export default function Dashboard() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Check if it's an image
     if (file.type.startsWith('image/')) {
-      // Create preview
       const reader = new FileReader();
       reader.onloadend = () => {
         setImagePreview(reader.result);
@@ -159,7 +161,6 @@ export default function Dashboard() {
       };
       reader.readAsDataURL(file);
     } else {
-      // Handle document upload to server
       const formData = new FormData();
       formData.append('file', file);
 
@@ -173,22 +174,177 @@ export default function Dashboard() {
         if (!response.ok) throw new Error('Upload failed');
 
         const data = await response.json();
-        setInputMessage(prev => prev + ` [Uploaded: ${file.name}]`);
+        
+        if (currentBot === 'student' && teacherMode) {
+          const text = await file.text();
+          generateQuiz(text);
+        } else {
+          setInputMessage(prev => prev + ` [Uploaded: ${file.name}]`);
+        }
       } catch (error) {
         console.error('Upload failed:', error);
       }
     }
   };
 
+  const generateQuiz = async (documentText) => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/generate-quiz`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ document_text: documentText })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setQuizQuestions(data.questions);
+        setCurrentQuestionIndex(0);
+        setShowQuizResults(false);
+        
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `📚 I've analyzed your document and created ${data.questions.length} questions to test your understanding. Let's begin!\n\n**Question 1:** ${data.questions[0].question}`,
+          timestamp: new Date().toISOString()
+        }]);
+      }
+    } catch (error) {
+      console.error('Quiz generation failed:', error);
+    }
+  };
+
+  const handleQuizAnswer = async (userAnswer) => {
+    if (currentQuestionIndex >= quizQuestions.length) return;
+
+    const currentQ = quizQuestions[currentQuestionIndex];
+    
+    setMessages(prev => [...prev, 
+      {
+        role: "user",
+        content: userAnswer,
+        timestamp: new Date().toISOString()
+      },
+      {
+        role: "assistant",
+        content: `✓ **Correct Answer:** ${currentQ.answer}\n\n${currentQ.explanation || ''}`,
+        timestamp: new Date().toISOString()
+      }
+    ]);
+
+    if (currentQuestionIndex + 1 < quizQuestions.length) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      setTimeout(() => {
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `**Question ${currentQuestionIndex + 2}:** ${quizQuestions[currentQuestionIndex + 1].question}`,
+          timestamp: new Date().toISOString()
+        }]);
+      }, 1000);
+    } else {
+      setShowQuizResults(true);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `🎉 **Quiz Complete!** You've answered all questions. Great job! Would you like me to generate a study plan PDF?`,
+        timestamp: new Date().toISOString()
+      }]);
+    }
+  };
+
+  const generateStudyPDF = async () => {
+    try {
+      const chatHistory = messages.map(m => m.content).join('\n\n');
+      
+      const response = await fetch(`${BACKEND_URL}/api/generate-study-plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ document_text: chatHistory })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        setMessages(prev => [...prev, {
+          role: "assistant",
+          content: `📄 **Study Plan PDF Generated!**\n\n${data.study_plan}\n\n[Download PDF](${BACKEND_URL}${data.pdf_url})`,
+          timestamp: new Date().toISOString()
+        }]);
+      }
+    } catch (error) {
+      console.error('PDF generation failed:', error);
+    }
+  };
+
   const handleVoiceRecord = () => {
     if (!isRecording) {
       setIsRecording(true);
-      // Placeholder for voice recording
       setTimeout(() => {
         setIsRecording(false);
       }, 3000);
     } else {
       setIsRecording(false);
+    }
+  };
+
+  const startEmotionDetection = async () => {
+    try {
+      setIsCameraActive(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        
+        const detectEmotion = async () => {
+          if (!isCameraActive || !videoRef.current || !canvasRef.current) return;
+          
+          const canvas = canvasRef.current;
+          const video = videoRef.current;
+          canvas.width = video.videoWidth || 640;
+          canvas.height = video.videoHeight || 480;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(video, 0, 0);
+          
+          const imageData = canvas.toDataURL('image/jpeg');
+          
+          try {
+            const response = await fetch(`${BACKEND_URL}/api/analyze-emotion`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ image_data: imageData })
+            });
+            
+            if (response.ok) {
+              const data = await response.json();
+              setEmotionDetected(data.emotion);
+              setInputMessage(`I'm feeling ${data.emotion}. Recommend me some music!`);
+            }
+          } catch (error) {
+            console.error('Emotion detection error:', error);
+          }
+        };
+        
+        const interval = setInterval(detectEmotion, 3000);
+        
+        return () => {
+          clearInterval(interval);
+          stream.getTracks().forEach(track => track.stop());
+        };
+      }
+    } catch (error) {
+      console.error('Camera access error:', error);
+      alert('Camera access denied. Please allow camera permissions.');
+      setIsCameraActive(false);
+    }
+  };
+
+  const stopEmotionDetection = () => {
+    setIsCameraActive(false);
+    setEmotionDetected(null);
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
     }
   };
 
@@ -421,6 +577,22 @@ export default function Dashboard() {
               )}
               {currentBot === "student" && (
                 <>
+                  <button
+                    onClick={() => setTeacherMode(!teacherMode)}
+                    className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
+                      teacherMode ? 'bg-black text-white' : 'bg-white'
+                    }`}
+                    data-testid="teacher-mode-btn"
+                  >
+                    👨‍🏫 Teacher Mode
+                  </button>
+                  <button
+                    onClick={generateStudyPDF}
+                    className="px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all bg-white"
+                    data-testid="generate-pdf-btn"
+                  >
+                    📄 Generate PDF
+                  </button>
                   <button
                     onClick={() => setSelectedMode(selectedMode === "elaborate" ? "normal" : "elaborate")}
                     className={`px-4 py-2 rounded-full border-2 border-black text-sm font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all ${
