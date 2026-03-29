@@ -20,6 +20,8 @@ export default function Dashboard() {
   const [selectedMode, setSelectedMode] = useState("normal");
   const [isRecording, setIsRecording] = useState(false);
   const [conversations, setConversations] = useState([]);
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -84,16 +86,21 @@ export default function Dashboard() {
   };
 
   const sendMessage = async () => {
-    if (!inputMessage.trim() || isLoading) return;
+    if ((!inputMessage.trim() && !uploadedImage) || isLoading) return;
 
     const userMsg = {
       role: "user",
-      content: inputMessage,
+      content: inputMessage || "Analyze this image",
+      image_url: imagePreview,
       timestamp: new Date().toISOString()
     };
 
     setMessages(prev => [...prev, userMsg]);
     setInputMessage("");
+    const currentImage = uploadedImage;
+    const currentPreview = imagePreview;
+    setUploadedImage(null);
+    setImagePreview(null);
     setIsLoading(true);
 
     try {
@@ -104,10 +111,11 @@ export default function Dashboard() {
         },
         credentials: 'include',
         body: JSON.stringify({
-          message: inputMessage,
+          message: inputMessage || "Please analyze this image",
           bot_type: currentBot,
           ai_model: selectedModel,
-          mode: selectedMode
+          mode: selectedMode,
+          image_data: currentImage
         })
       });
 
@@ -122,6 +130,11 @@ export default function Dashboard() {
       }]);
     } catch (error) {
       console.error('Failed to send message:', error);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: "Sorry, I encountered an error. Please try again.",
+        timestamp: new Date().toISOString()
+      }]);
     } finally {
       setIsLoading(false);
     }
@@ -131,22 +144,34 @@ export default function Dashboard() {
     const file = e.target.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
+    // Check if it's an image
+    if (file.type.startsWith('image/')) {
+      // Create preview
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+        setUploadedImage(reader.result);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      // Handle document upload to server
+      const formData = new FormData();
+      formData.append('file', file);
 
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/upload`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData
-      });
+      try {
+        const response = await fetch(`${BACKEND_URL}/api/upload`, {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        });
 
-      if (!response.ok) throw new Error('Upload failed');
+        if (!response.ok) throw new Error('Upload failed');
 
-      const data = await response.json();
-      setInputMessage(prev => prev + ` [Uploaded: ${file.name}]`);
-    } catch (error) {
-      console.error('Upload failed:', error);
+        const data = await response.json();
+        setInputMessage(prev => prev + ` [Uploaded: ${file.name}]`);
+      } catch (error) {
+        console.error('Upload failed:', error);
+      }
     }
   };
 
@@ -241,17 +266,17 @@ export default function Dashboard() {
         {/* Bot Selection */}
         <div className="p-6 border-b-2 border-black">
           <p className="text-xs font-bold uppercase tracking-wider mb-4" style={{ fontFamily: 'Outfit, sans-serif' }}>Select Bot</p>
-          <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
             {Object.entries(botConfigs).map(([key, config]) => {
               const Icon = config.icon;
               return (
                 <button
                   key={key}
                   onClick={() => setCurrentBot(key)}
-                  className={`w-full p-3 rounded-xl border-2 border-black font-bold text-left flex items-center gap-3 transition-all ${
+                  className={`p-3 rounded-xl border-2 border-black font-bold text-left flex flex-col items-center gap-2 transition-all ${
                     currentBot === key
-                      ? 'shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5'
-                      : 'shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5'
+                      ? 'shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5'
+                      : 'shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5'
                   }`}
                   style={{ 
                     backgroundColor: currentBot === key ? config.color : '#FFFFFF',
@@ -260,7 +285,7 @@ export default function Dashboard() {
                   data-testid={`bot-${key}-btn`}
                 >
                   <Icon className="w-5 h-5" strokeWidth={2.5} />
-                  <span className="text-sm">{config.name}</span>
+                  <span className="text-xs text-center">{config.name}</span>
                 </button>
               );
             })}
@@ -400,6 +425,14 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="bg-black text-white rounded-2xl rounded-tr-none p-6 max-w-[85%]">
+                    {msg.image_url && (
+                      <img 
+                        src={msg.image_url} 
+                        alt="Uploaded" 
+                        className="max-w-full rounded-lg mb-3 border-2 border-white"
+                        style={{ maxHeight: '300px' }}
+                      />
+                    )}
                     <p className="text-base leading-relaxed">{msg.content}</p>
                   </div>
                 )}
@@ -422,6 +455,24 @@ export default function Dashboard() {
 
         {/* Input Area */}
         <div className="p-8 bg-white border-t-2 border-black">
+          {imagePreview && (
+            <div className="mb-4 relative inline-block">
+              <img 
+                src={imagePreview} 
+                alt="Preview" 
+                className="max-h-32 rounded-lg border-2 border-black"
+              />
+              <button
+                onClick={() => {
+                  setImagePreview(null);
+                  setUploadedImage(null);
+                }}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full border-2 border-black flex items-center justify-center font-bold hover:bg-red-600"
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div className="flex gap-3 items-end">
             <div className="flex-1 relative">
               <input
@@ -454,6 +505,7 @@ export default function Dashboard() {
                   type="file"
                   ref={fileInputRef}
                   onChange={handleFileUpload}
+                  accept="image/*,.pdf,.doc,.docx,.txt"
                   className="hidden"
                 />
                 <button

@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 import requests
 from io import BytesIO
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContent
 import base64
 from PIL import Image
 import json
@@ -240,11 +240,14 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
             system_message=system_msg
         ).with_model(provider, model)
         
-        message_content = request.message
+        # For now, if image is provided, acknowledge it in the message
+        # Full vision API support can be added when available
         if request.image_data:
-            message_content = f"{request.message}\n\n[User uploaded an image for analysis]"
+            message_text = f"{request.message}\n\n[Note: Image uploaded. Full image analysis will be available soon. For now, I can help based on your description.]"
+            user_message = UserMessage(text=message_text)
+        else:
+            user_message = UserMessage(text=request.message)
         
-        user_message = UserMessage(text=message_content)
         response = await chat.send_message(user_message)
         
         user_msg = ChatMessage(
@@ -253,7 +256,7 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
             bot_type=request.bot_type,
             role="user",
             content=request.message,
-            image_url=None,
+            image_url=request.image_data[:100] if request.image_data else None,
             timestamp=datetime.now(timezone.utc).isoformat()
         )
         
