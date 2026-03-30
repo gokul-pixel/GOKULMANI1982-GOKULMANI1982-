@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, Calculator, FileText, Clock, CheckSquare, Calendar as CalendarIcon, Plus, X, Check, Trash2, Play, Pause, RotateCcw } from "lucide-react";
-import { motion } from "framer-motion";
+import { ArrowLeft, Calculator, FileText, Clock, CheckSquare, Calendar as CalendarIcon, Plus, X, Check, Trash2, Play, Pause, RotateCcw, Gamepad2, Brain, Shuffle, Zap } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -44,6 +44,28 @@ export default function BrainOfBruh() {
   const [eventDate, setEventDate] = useState("");
   const [eventTime, setEventTime] = useState("");
   const [eventDescription, setEventDescription] = useState("");
+
+  // Games
+  const [activeGame, setActiveGame] = useState(null);
+  const [triviaQuestions, setTriviaQuestions] = useState([]);
+  const [triviaIndex, setTriviaIndex] = useState(0);
+  const [triviaScore, setTriviaScore] = useState(0);
+  const [triviaAnswered, setTriviaAnswered] = useState(false);
+  const [triviaLoading, setTriviaLoading] = useState(false);
+  const [mathProblem, setMathProblem] = useState(null);
+  const [mathAnswer, setMathAnswer] = useState("");
+  const [mathScore, setMathScore] = useState(0);
+  const [mathStreak, setMathStreak] = useState(0);
+  const [mathFeedback, setMathFeedback] = useState("");
+  const [scrambleWord, setScrambleWord] = useState("");
+  const [scrambleOriginal, setScrambleOriginal] = useState("");
+  const [scrambleGuess, setScrambleGuess] = useState("");
+  const [scrambleScore, setScrambleScore] = useState(0);
+  const [scrambleFeedback, setScrambleFeedback] = useState("");
+  const [memoryCards, setMemoryCards] = useState([]);
+  const [memoryFlipped, setMemoryFlipped] = useState([]);
+  const [memoryMatched, setMemoryMatched] = useState([]);
+  const [memoryMoves, setMemoryMoves] = useState(0);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -329,12 +351,120 @@ export default function BrainOfBruh() {
     }
   };
 
+  // Game functions
+  const generateMathProblem = useCallback(() => {
+    const ops = ['+', '-', '*'];
+    const op = ops[Math.floor(Math.random() * ops.length)];
+    let a, b;
+    if (op === '*') {
+      a = Math.floor(Math.random() * 12) + 2;
+      b = Math.floor(Math.random() * 12) + 2;
+    } else {
+      a = Math.floor(Math.random() * 50) + 10;
+      b = Math.floor(Math.random() * 30) + 5;
+    }
+    let answer;
+    if (op === '+') answer = a + b;
+    else if (op === '-') answer = a - b;
+    else answer = a * b;
+    setMathProblem({ a, b, op, answer });
+    setMathAnswer("");
+    setMathFeedback("");
+  }, []);
+
+  const checkMathAnswer = () => {
+    if (parseInt(mathAnswer) === mathProblem.answer) {
+      setMathScore(s => s + 1);
+      setMathStreak(s => s + 1);
+      setMathFeedback("correct");
+      setTimeout(() => generateMathProblem(), 800);
+    } else {
+      setMathStreak(0);
+      setMathFeedback("wrong");
+    }
+  };
+
+  const wordList = ["JAVASCRIPT", "PYTHON", "ALGORITHM", "DATABASE", "FUNCTION", "VARIABLE", "COMPUTER", "KEYBOARD", "INTERNET", "PROGRAM", "BRUHBOT", "SCIENCE", "GALAXY", "DINOSAUR", "VOLCANO", "ELEPHANT", "RAINBOW", "MYSTERY", "GRAVITY", "CRYSTAL"];
+
+  const generateScramble = useCallback(() => {
+    const word = wordList[Math.floor(Math.random() * wordList.length)];
+    const scrambled = word.split('').sort(() => Math.random() - 0.5).join('');
+    setScrambleOriginal(word);
+    setScrambleWord(scrambled);
+    setScrambleGuess("");
+    setScrambleFeedback("");
+  }, []);
+
+  const checkScramble = () => {
+    if (scrambleGuess.toUpperCase() === scrambleOriginal) {
+      setScrambleScore(s => s + 1);
+      setScrambleFeedback("correct");
+      setTimeout(() => generateScramble(), 800);
+    } else {
+      setScrambleFeedback("wrong");
+    }
+  };
+
+  const emojiSets = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+  const emojisMap = { a: '🔴', b: '🔵', c: '🟢', d: '🟡', e: '🟣', f: '🟠', g: '⬛', h: '⬜' };
+  
+  const initMemoryGame = useCallback(() => {
+    const pairs = emojiSets.slice(0, 6);
+    const deck = [...pairs, ...pairs].sort(() => Math.random() - 0.5);
+    setMemoryCards(deck);
+    setMemoryFlipped([]);
+    setMemoryMatched([]);
+    setMemoryMoves(0);
+  }, []);
+
+  const flipMemoryCard = (index) => {
+    if (memoryFlipped.length >= 2 || memoryFlipped.includes(index) || memoryMatched.includes(index)) return;
+    
+    const newFlipped = [...memoryFlipped, index];
+    setMemoryFlipped(newFlipped);
+    
+    if (newFlipped.length === 2) {
+      setMemoryMoves(m => m + 1);
+      const [first, second] = newFlipped;
+      if (memoryCards[first] === memoryCards[second]) {
+        setMemoryMatched(prev => [...prev, first, second]);
+        setMemoryFlipped([]);
+      } else {
+        setTimeout(() => setMemoryFlipped([]), 800);
+      }
+    }
+  };
+
+  const loadTrivia = async (category = "general knowledge") => {
+    setTriviaLoading(true);
+    setTriviaIndex(0);
+    setTriviaScore(0);
+    setTriviaAnswered(false);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/games/trivia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ category, difficulty: "medium" })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTriviaQuestions(data.questions || []);
+      }
+    } catch (error) {
+      console.error('Failed to load trivia:', error);
+    } finally {
+      setTriviaLoading(false);
+    }
+  };
+
   const modules = [
     { id: 'calculator', name: 'Calculator', icon: Calculator, color: '#FDFFB6' },
     { id: 'notes', name: 'Notes', icon: FileText, color: '#A0C4FF' },
     { id: 'timer', name: 'Study Timer', icon: Clock, color: '#CAFFBF' },
     { id: 'tasks', name: 'Tasks', icon: CheckSquare, color: '#FFADAD' },
-    { id: 'calendar', name: 'Calendar', icon: CalendarIcon, color: '#FFD6A5' }
+    { id: 'calendar', name: 'Calendar', icon: CalendarIcon, color: '#FFD6A5' },
+    { id: 'games', name: 'Game Zone', icon: Gamepad2, color: '#E8DAEF' }
   ];
 
   if (isAuthenticated === null) {
@@ -349,18 +479,19 @@ export default function BrainOfBruh() {
   }
 
   return (
-    <div className="min-h-screen" style={{ backgroundColor: '#FFFDF9', fontFamily: 'DM Sans, sans-serif' }}>
+    <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)', fontFamily: 'DM Sans, sans-serif', color: 'var(--text-primary)' }}>
       <div className="p-6">
         <div className="flex items-center gap-4 mb-8">
           <button
             onClick={() => navigate('/dashboard')}
-            className="p-3 rounded-full border-2 border-black bg-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] transition-all"
+            className="p-3 rounded-full border-2 shadow-[2px_2px_0px_0px] hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_0px] transition-all"
+            style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}
             data-testid="back-btn"
           >
             <ArrowLeft className="w-6 h-6" strokeWidth={2.5} />
           </button>
           <div>
-            <h1 className="text-4xl font-black" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
+            <h1 className="text-4xl font-black" style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--text-primary)' }}>
               Brain of BRUH
             </h1>
             <p className="opacity-70">Your productivity toolkit</p>
@@ -760,6 +891,294 @@ export default function BrainOfBruh() {
                     <p className="text-center opacity-50 py-12">No events yet. Add your first event!</p>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Game Zone */}
+            {activeModule === 'games' && (
+              <div className="border-2 rounded-2xl p-8 shadow-[6px_6px_0px_0px]" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} data-testid="games-module">
+                <h2 className="text-3xl font-bold mb-6" style={{ fontFamily: 'Outfit, sans-serif' }}>Game Zone</h2>
+                
+                {!activeGame && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <motion.button
+                      whileHover={{ scale: 1.02, y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => { setActiveGame('trivia'); loadTrivia(); }}
+                      className="p-6 rounded-2xl border-2 text-left shadow-[4px_4px_0px_0px] hover:shadow-[6px_6px_0px_0px] transition-all"
+                      style={{ borderColor: 'var(--border-color)', backgroundColor: '#FDFFB6' }}
+                      data-testid="game-trivia-btn"
+                    >
+                      <Brain className="w-10 h-10 mb-3" />
+                      <p className="font-black text-lg" style={{ fontFamily: 'Outfit' }}>AI Trivia Quiz</p>
+                      <p className="text-sm opacity-70 mt-1">AI-generated questions</p>
+                    </motion.button>
+                    
+                    <motion.button
+                      whileHover={{ scale: 1.02, y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => { setActiveGame('math'); generateMathProblem(); }}
+                      className="p-6 rounded-2xl border-2 text-left shadow-[4px_4px_0px_0px] hover:shadow-[6px_6px_0px_0px] transition-all"
+                      style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }}
+                      data-testid="game-math-btn"
+                    >
+                      <Zap className="w-10 h-10 mb-3" />
+                      <p className="font-black text-lg" style={{ fontFamily: 'Outfit' }}>Quick Math</p>
+                      <p className="text-sm opacity-70 mt-1">Test your speed</p>
+                    </motion.button>
+                    
+                    <motion.button
+                      whileHover={{ scale: 1.02, y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => { setActiveGame('scramble'); generateScramble(); }}
+                      className="p-6 rounded-2xl border-2 text-left shadow-[4px_4px_0px_0px] hover:shadow-[6px_6px_0px_0px] transition-all"
+                      style={{ borderColor: 'var(--border-color)', backgroundColor: '#A0C4FF' }}
+                      data-testid="game-scramble-btn"
+                    >
+                      <Shuffle className="w-10 h-10 mb-3" />
+                      <p className="font-black text-lg" style={{ fontFamily: 'Outfit' }}>Word Scramble</p>
+                      <p className="text-sm opacity-70 mt-1">Unscramble the word</p>
+                    </motion.button>
+                    
+                    <motion.button
+                      whileHover={{ scale: 1.02, y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => { setActiveGame('memory'); initMemoryGame(); }}
+                      className="p-6 rounded-2xl border-2 text-left shadow-[4px_4px_0px_0px] hover:shadow-[6px_6px_0px_0px] transition-all"
+                      style={{ borderColor: 'var(--border-color)', backgroundColor: '#FFB6E1' }}
+                      data-testid="game-memory-btn"
+                    >
+                      <Gamepad2 className="w-10 h-10 mb-3" />
+                      <p className="font-black text-lg" style={{ fontFamily: 'Outfit' }}>Memory Cards</p>
+                      <p className="text-sm opacity-70 mt-1">Match the pairs</p>
+                    </motion.button>
+                  </div>
+                )}
+
+                {/* Trivia Game */}
+                {activeGame === 'trivia' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-6">
+                      <button onClick={() => setActiveGame(null)} className="px-4 py-2 rounded-xl border-2 font-bold text-sm hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)' }} data-testid="back-to-games-btn">
+                        <ArrowLeft className="w-4 h-4 inline mr-1" /> Back
+                      </button>
+                      <span className="font-bold text-lg px-4 py-2 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#FDFFB6' }}>Score: {triviaScore}/{triviaQuestions.length}</span>
+                    </div>
+                    
+                    {triviaLoading ? (
+                      <div className="text-center py-16">
+                        <div className="w-12 h-12 border-4 border-t-transparent rounded-full animate-spin mx-auto mb-4" style={{ borderColor: 'var(--border-color)', borderTopColor: 'transparent' }} />
+                        <p className="font-bold">AI is generating questions...</p>
+                      </div>
+                    ) : triviaQuestions.length > 0 && triviaIndex < triviaQuestions.length ? (
+                      <motion.div key={triviaIndex} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} className="space-y-4">
+                        <p className="text-sm opacity-50">Question {triviaIndex + 1} of {triviaQuestions.length}</p>
+                        <p className="text-xl font-bold" style={{ fontFamily: 'Outfit' }}>{triviaQuestions[triviaIndex].question}</p>
+                        <div className="grid grid-cols-1 gap-3">
+                          {(triviaQuestions[triviaIndex].options || []).map((opt, oidx) => (
+                            <motion.button
+                              key={oidx}
+                              whileHover={!triviaAnswered ? { scale: 1.02 } : {}}
+                              whileTap={!triviaAnswered ? { scale: 0.98 } : {}}
+                              onClick={() => {
+                                if (triviaAnswered) return;
+                                setTriviaAnswered(true);
+                                if (oidx === triviaQuestions[triviaIndex].correct) {
+                                  setTriviaScore(s => s + 1);
+                                }
+                              }}
+                              disabled={triviaAnswered}
+                              className={`p-4 rounded-xl border-2 text-left font-medium transition-all ${
+                                triviaAnswered
+                                  ? oidx === triviaQuestions[triviaIndex].correct
+                                    ? 'bg-green-200 border-green-600'
+                                    : 'opacity-50'
+                                  : 'hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_0px]'
+                              }`}
+                              style={{ borderColor: 'var(--border-color)', backgroundColor: triviaAnswered && oidx === triviaQuestions[triviaIndex].correct ? '#CAFFBF' : 'var(--bg-primary)' }}
+                              data-testid={`trivia-option-${oidx}`}
+                            >
+                              <span className="font-bold mr-2">{String.fromCharCode(65 + oidx)}.</span> {opt}
+                            </motion.button>
+                          ))}
+                        </div>
+                        {triviaAnswered && (
+                          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="mt-4">
+                            <p className="text-sm p-3 rounded-xl border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#FDFFB6' }}>
+                              {triviaQuestions[triviaIndex].explanation}
+                            </p>
+                            <button
+                              onClick={() => { setTriviaIndex(i => i + 1); setTriviaAnswered(false); }}
+                              className="mt-3 px-6 py-3 rounded-xl border-2 font-bold shadow-[3px_3px_0px_0px] hover:-translate-y-0.5 transition-all"
+                              style={{ borderColor: 'var(--border-color)', backgroundColor: '#A0C4FF' }}
+                              data-testid="next-trivia-btn"
+                            >
+                              {triviaIndex < triviaQuestions.length - 1 ? 'Next Question' : 'See Results'}
+                            </button>
+                          </motion.div>
+                        )}
+                      </motion.div>
+                    ) : triviaQuestions.length > 0 ? (
+                      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-12">
+                        <p className="text-6xl font-black mb-4" style={{ fontFamily: 'Outfit' }}>{triviaScore}/{triviaQuestions.length}</p>
+                        <p className="text-xl font-bold mb-6">{triviaScore === triviaQuestions.length ? 'Perfect Score!' : triviaScore > 2 ? 'Great Job!' : 'Keep Practicing!'}</p>
+                        <button onClick={() => loadTrivia()} className="px-6 py-3 rounded-xl border-2 font-bold shadow-[3px_3px_0px_0px] hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }} data-testid="play-again-trivia-btn">
+                          Play Again
+                        </button>
+                      </motion.div>
+                    ) : (
+                      <p className="text-center py-12 opacity-50">No questions loaded. Try again!</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Quick Math Game */}
+                {activeGame === 'math' && mathProblem && (
+                  <div>
+                    <div className="flex justify-between items-center mb-6">
+                      <button onClick={() => setActiveGame(null)} className="px-4 py-2 rounded-xl border-2 font-bold text-sm hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)' }} data-testid="back-to-games-math">
+                        <ArrowLeft className="w-4 h-4 inline mr-1" /> Back
+                      </button>
+                      <div className="flex gap-3">
+                        <span className="font-bold px-3 py-1 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }}>Score: {mathScore}</span>
+                        <span className="font-bold px-3 py-1 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#FDFFB6' }}>Streak: {mathStreak}</span>
+                      </div>
+                    </div>
+                    <motion.div key={`${mathProblem.a}${mathProblem.op}${mathProblem.b}`} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
+                      <p className="text-6xl font-black mb-8" style={{ fontFamily: 'Outfit' }}>{mathProblem.a} {mathProblem.op === '*' ? '×' : mathProblem.op} {mathProblem.b} = ?</p>
+                      <div className="flex items-center justify-center gap-4 max-w-xs mx-auto">
+                        <input
+                          type="number"
+                          value={mathAnswer}
+                          onChange={(e) => setMathAnswer(e.target.value)}
+                          onKeyPress={(e) => e.key === 'Enter' && checkMathAnswer()}
+                          className="w-32 text-center text-2xl font-bold p-3 rounded-xl border-2"
+                          style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                          placeholder="?"
+                          autoFocus
+                          data-testid="math-answer-input"
+                        />
+                        <motion.button
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={checkMathAnswer}
+                          className="px-6 py-3 rounded-xl border-2 font-bold shadow-[3px_3px_0px_0px] hover:-translate-y-0.5 transition-all"
+                          style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }}
+                          data-testid="math-check-btn"
+                        >
+                          Check
+                        </motion.button>
+                      </div>
+                      <AnimatePresence>
+                        {mathFeedback && (
+                          <motion.p
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className={`mt-4 text-2xl font-black ${mathFeedback === 'correct' ? 'text-green-600' : 'text-red-500'}`}
+                          >
+                            {mathFeedback === 'correct' ? 'Correct!' : `Wrong! Answer: ${mathProblem.answer}`}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  </div>
+                )}
+
+                {/* Word Scramble Game */}
+                {activeGame === 'scramble' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-6">
+                      <button onClick={() => setActiveGame(null)} className="px-4 py-2 rounded-xl border-2 font-bold text-sm hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)' }} data-testid="back-to-games-scramble">
+                        <ArrowLeft className="w-4 h-4 inline mr-1" /> Back
+                      </button>
+                      <span className="font-bold px-3 py-1 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#A0C4FF' }}>Score: {scrambleScore}</span>
+                    </div>
+                    <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8">
+                      <p className="text-sm opacity-50 mb-2">Unscramble this word:</p>
+                      <div className="flex justify-center gap-2 mb-8">
+                        {scrambleWord.split('').map((letter, li) => (
+                          <motion.span
+                            key={li}
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: li * 0.05 }}
+                            className="w-10 h-10 rounded-lg border-2 flex items-center justify-center text-lg font-black"
+                            style={{ borderColor: 'var(--border-color)', backgroundColor: '#A0C4FF' }}
+                          >
+                            {letter}
+                          </motion.span>
+                        ))}
+                      </div>
+                      <div className="flex items-center justify-center gap-4 max-w-sm mx-auto">
+                        <input
+                          type="text"
+                          value={scrambleGuess}
+                          onChange={(e) => setScrambleGuess(e.target.value.toUpperCase())}
+                          onKeyPress={(e) => e.key === 'Enter' && checkScramble()}
+                          className="flex-1 text-center text-xl font-bold p-3 rounded-xl border-2 uppercase tracking-wider"
+                          style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}
+                          placeholder="Your answer..."
+                          data-testid="scramble-input"
+                        />
+                        <button onClick={checkScramble} className="px-6 py-3 rounded-xl border-2 font-bold shadow-[3px_3px_0px_0px] hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }} data-testid="scramble-check-btn">
+                          Check
+                        </button>
+                      </div>
+                      <button onClick={generateScramble} className="mt-4 text-sm underline opacity-50 hover:opacity-100" data-testid="scramble-skip-btn">Skip word</button>
+                      <AnimatePresence>
+                        {scrambleFeedback && (
+                          <motion.p initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className={`mt-4 text-2xl font-black ${scrambleFeedback === 'correct' ? 'text-green-600' : 'text-red-500'}`}>
+                            {scrambleFeedback === 'correct' ? 'Correct!' : `Nope! The word was: ${scrambleOriginal}`}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
+                    </motion.div>
+                  </div>
+                )}
+
+                {/* Memory Card Game */}
+                {activeGame === 'memory' && (
+                  <div>
+                    <div className="flex justify-between items-center mb-6">
+                      <button onClick={() => setActiveGame(null)} className="px-4 py-2 rounded-xl border-2 font-bold text-sm hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)' }} data-testid="back-to-games-memory">
+                        <ArrowLeft className="w-4 h-4 inline mr-1" /> Back
+                      </button>
+                      <div className="flex gap-3">
+                        <span className="font-bold px-3 py-1 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#FFB6E1' }}>Moves: {memoryMoves}</span>
+                        <span className="font-bold px-3 py-1 rounded-full border-2" style={{ borderColor: 'var(--border-color)', backgroundColor: '#CAFFBF' }}>Matched: {memoryMatched.length / 2}/6</span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3 max-w-md mx-auto">
+                      {memoryCards.map((card, ci) => (
+                        <motion.button
+                          key={ci}
+                          whileHover={!memoryFlipped.includes(ci) && !memoryMatched.includes(ci) ? { scale: 1.05 } : {}}
+                          whileTap={!memoryFlipped.includes(ci) && !memoryMatched.includes(ci) ? { scale: 0.95 } : {}}
+                          onClick={() => flipMemoryCard(ci)}
+                          className="w-full aspect-square rounded-xl border-2 text-2xl font-bold flex items-center justify-center transition-all"
+                          style={{
+                            borderColor: 'var(--border-color)',
+                            backgroundColor: memoryMatched.includes(ci) ? '#CAFFBF' : memoryFlipped.includes(ci) ? '#FDFFB6' : 'var(--bg-primary)',
+                            boxShadow: memoryFlipped.includes(ci) || memoryMatched.includes(ci) ? 'none' : '3px 3px 0px 0px var(--border-color)'
+                          }}
+                          data-testid={`memory-card-${ci}`}
+                        >
+                          {memoryFlipped.includes(ci) || memoryMatched.includes(ci) ? emojisMap[card] : '?'}
+                        </motion.button>
+                      ))}
+                    </div>
+                    {memoryMatched.length === memoryCards.length && memoryCards.length > 0 && (
+                      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center mt-8">
+                        <p className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit' }}>You Won!</p>
+                        <p className="text-lg mb-4">Completed in {memoryMoves} moves</p>
+                        <button onClick={initMemoryGame} className="px-6 py-3 rounded-xl border-2 font-bold shadow-[3px_3px_0px_0px] hover:-translate-y-0.5 transition-all" style={{ borderColor: 'var(--border-color)', backgroundColor: '#FFB6E1' }} data-testid="play-again-memory-btn">
+                          Play Again
+                        </button>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>

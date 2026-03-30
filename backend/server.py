@@ -25,6 +25,8 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.enums import TA_LEFT, TA_CENTER
 from urllib.parse import quote
 from PyPDF2 import PdfReader
+from data.recipes import RECIPES, get_recipe_recommendations, format_recipe_for_ai
+from data.music import EMOTION_SONGS, get_songs_for_emotion, format_songs_for_ai
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -284,6 +286,26 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
     provider, model = provider_model_map.get(request.ai_model, ("openai", "gpt-5.1"))
     
     try:
+        # For cook bot, inject recipe data into the AI prompt
+        if request.bot_type == "cook":
+            recipes = get_recipe_recommendations(request.message, count=3)
+            recipe_context = format_recipe_for_ai(recipes)
+            message_text = f"{message_text}\n\nHere are some relevant recipes from our database to reference:\n{recipe_context}\nPlease recommend from these or suggest your own. Always provide step-by-step instructions."
+        
+        # For music bot, inject song recommendations
+        if request.bot_type == "music":
+            # Extract emotion keywords from message
+            emotion_keywords = ["happy", "sad", "angry", "calm", "excited", "tired", "neutral", "energetic", "relaxed", "romantic", "melancholic", "surprised", "anxious"]
+            detected_mood = "neutral"
+            msg_lower = request.message.lower()
+            for emo in emotion_keywords:
+                if emo in msg_lower:
+                    detected_mood = emo
+                    break
+            songs = get_songs_for_emotion(detected_mood, count=5)
+            songs_context = format_songs_for_ai(detected_mood, songs)
+            message_text = f"{message_text}\n\nHere are songs from our music database for the '{detected_mood}' mood:\n{songs_context}\nRecommend 3 of these songs with brief explanations of why they match the mood."
+        
         llm_chat = LlmChat(
             api_key=EMERGENT_KEY,
             session_id=f"{current_user.user_id}_{request.bot_type}_{uuid.uuid4().hex[:8]}",
@@ -292,7 +314,6 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
         
         # Build user message with optional image
         if request.image_data and request.image_data.startswith("data:image"):
-            # Extract base64 data from data URL
             base64_data = request.image_data.split(",", 1)[1] if "," in request.image_data else request.image_data
             image_content = ImageContent(image_base64=base64_data)
             user_message = UserMessage(text=message_text, file_contents=[image_content])
@@ -303,25 +324,24 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
         
         # For cooking bot, search for COOKING/RECIPE video
         video_url = None
+        recipe_cards = None
         if request.bot_type == "cook":
             recipe_query = request.message.replace("how to make", "").replace("recipe", "").strip()
             video_url = search_cooking_video(recipe_query)
+            # Include recipe cards in response
+            recipes = get_recipe_recommendations(request.message, count=3)
+            recipe_cards = [{"name": r["name"], "cuisine": r["cuisine"], "time": r["time"], "difficulty": r["difficulty"], "ingredients": r["ingredients"][:6]} for r in recipes]
         
-        # For music bot, search for each recommended song
+        # For music bot, get song URLs
         song_url = None
+        song_cards = None
         if request.bot_type == "music":
-            # Try to extract first song recommendation from response
-            lines = response.split('\n')
-            for line in lines:
-                if '-' in line and any(c.isalpha() for c in line):
-                    clean_line = re.sub(r'[*#★•\d.]+', '', line).strip()
-                    if len(clean_line) > 5:
-                        song_url = search_music_video(clean_line)
-                        if song_url:
-                            break
-            if not song_url:
-                # Fallback: search with the emotion/mood mentioned
-                song_url = search_music_video(request.message + " song")
+            songs = get_songs_for_emotion(detected_mood, count=3)
+            song_cards = songs
+            # Search for first song on YouTube
+            if songs:
+                first_song = f"{songs[0]['title']} {songs[0]['artist']}"
+                song_url = search_music_video(first_song)
         
         # Save messages to DB
         user_msg = ChatMessage(
@@ -351,6 +371,10 @@ async def chat(request: ChatRequest, authorization: str = Header(None), auth: st
             result["video_url"] = video_url
         if song_url:
             result["song_url"] = song_url
+        if recipe_cards:
+            result["recipe_cards"] = recipe_cards
+        if song_cards:
+            result["song_cards"] = song_cards
         
         return result
     except HTTPException:
@@ -558,6 +582,64 @@ Include:
         "study_plan": response,
         "pdf_url": f"/api/files/{result['path']}"
     }
+
+
+@api_router.get("/recipes")
+async def get_recipes(
+    query: str = Query(""),
+    cuisine: str = Query(None),
+    category: str = Query(None),
+    authorization: str = Header(None),
+    session_token: str = Cookie(None)
+):
+    await get_current_user(authorization, None, session_token)
+    recipes = get_recipe_recommendations(query, cuisine, category, count=10)
+    return {"recipes": recipes}
+
+@api_router.post("/games/trivia")
+async def generate_trivia(
+    game_data: dict,
+    authorization: str = Header(None),
+    auth: str = Query(None),
+    session_token: str = Cookie(None)
+):
+    await get_current_user(authorization, auth, session_token)
+    
+    category = game_data.get("category", "general knowledge")
+    difficulty = game_data.get("difficulty", "medium")
+    
+    llm_chat = LlmChat(
+        api_key=EMERGENT_KEY,
+        session_id=f"trivia_{uuid.uuid4().hex[:8]}",
+        system_message="You are a trivia game master. Generate fun and educational trivia questions."
+    ).with_model("openai", "gpt-5.1")
+    
+    prompt = f"""Generate 5 {difficulty} difficulty trivia questions about {category}.
+Return ONLY a JSON array with this structure:
+[{{"question": "question text", "options": ["A", "B", "C", "D"], "correct": 0, "explanation": "why this is correct"}}]
+The "correct" field is the index (0-3) of the correct option.
+Return ONLY the JSON array, nothing else."""
+    
+    try:
+        response = await llm_chat.send_message(UserMessage(text=prompt))
+        json_match = re.search(r'\[.*\]', response, re.DOTALL)
+        if json_match:
+            questions = json.loads(json_match.group())
+        else:
+            questions = [{"question": "What is the capital of France?", "options": ["London", "Paris", "Berlin", "Madrid"], "correct": 1, "explanation": "Paris is the capital of France"}]
+        return {"questions": questions}
+    except Exception:
+        return {"questions": [{"question": "What is 2 + 2?", "options": ["3", "4", "5", "6"], "correct": 1, "explanation": "Basic math: 2 + 2 = 4"}]}
+
+@api_router.get("/music/songs")
+async def get_music_recommendations(
+    emotion: str = Query("neutral"),
+    authorization: str = Header(None),
+    session_token: str = Cookie(None)
+):
+    await get_current_user(authorization, None, session_token)
+    songs = get_songs_for_emotion(emotion, count=5)
+    return {"songs": songs, "emotion": emotion}
 
 @api_router.delete("/chat/delete/{bot_type}")
 async def delete_chat_history(

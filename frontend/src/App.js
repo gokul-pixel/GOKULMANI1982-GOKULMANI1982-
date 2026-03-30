@@ -1,9 +1,9 @@
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
 import Login from "@/pages/Login";
 import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import BrainOfBruh from "@/pages/BrainOfBruh";
+import BruhVoiceAgent from "@/components/BruhVoiceAgent";
 import "@/App.css";
 
 function AppRouter() {
@@ -13,12 +13,15 @@ function AppRouter() {
   }
   
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/brain" element={<BrainOfBruh />} />
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/brain" element={<BrainOfBruh />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      </Routes>
+      <BruhVoiceAgent />
+    </>
   );
 }
 

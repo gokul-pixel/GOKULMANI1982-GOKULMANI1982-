@@ -157,20 +157,24 @@ export default function Dashboard() {
       }
       
       // For cooking bot, get video if available
-      if (currentBot === 'cook' && data.video_url) {
+      if (currentBot === 'cook') {
         setMessages(prev => [...prev, {
           role: "assistant",
           content: data.message,
-          video_url: data.video_url,
+          video_url: data.video_url || null,
+          recipe_cards: data.recipe_cards || null,
           timestamp: new Date().toISOString()
         }]);
-      } else if (currentBot === 'music' && data.song_url) {
-        setCurrentSong(data.song_url);
-        setIsPlaying(true);
+      } else if (currentBot === 'music') {
+        if (data.song_url) {
+          setCurrentSong(data.song_url);
+          setIsPlaying(true);
+        }
         setMessages(prev => [...prev, {
           role: "assistant",
           content: data.message,
-          song_url: data.song_url,
+          song_url: data.song_url || null,
+          song_cards: data.song_cards || null,
           timestamp: new Date().toISOString()
         }]);
       } else {
@@ -655,26 +659,15 @@ export default function Dashboard() {
     setCurrentTheme(theme);
     const root = document.documentElement;
     
+    // Remove old theme, set new one
+    root.removeAttribute('data-theme');
+    
     if (theme === "dark") {
-      root.style.setProperty('--bg-primary', '#1A1A1A');
-      root.style.setProperty('--bg-secondary', '#2A2A2A');
-      root.style.setProperty('--text-primary', '#FFFFFF');
-      root.style.setProperty('--text-secondary', '#E0E0E0');
-      root.style.setProperty('--border-color', '#FFFFFF');
+      root.setAttribute('data-theme', 'dark');
     } else if (theme === "cool-blue") {
-      root.style.setProperty('--bg-primary', '#E3F2FD');
-      root.style.setProperty('--bg-secondary', '#BBDEFB');
-      root.style.setProperty('--text-primary', '#0D47A1');
-      root.style.setProperty('--text-secondary', '#1565C0');
-      root.style.setProperty('--border-color', '#0D47A1');
-    } else {
-      // Light theme (default)
-      root.style.setProperty('--bg-primary', '#FFFDF9');
-      root.style.setProperty('--bg-secondary', '#FFFFFF');
-      root.style.setProperty('--text-primary', '#1A1A1A');
-      root.style.setProperty('--text-secondary', '#1A1A1A');
-      root.style.setProperty('--border-color', '#000000');
+      root.setAttribute('data-theme', 'cool-blue');
     }
+    // Light theme is default (no attribute needed)
   };
 
   const botConfigs = {
@@ -728,26 +721,26 @@ export default function Dashboard() {
   const BotIcon = currentBotConfig.icon;
 
   return (
-    <div className="h-screen flex" style={{ backgroundColor: '#FFFDF9', fontFamily: 'DM Sans, sans-serif' }}>
+    <div className="h-screen flex" style={{ backgroundColor: 'var(--bg-primary)', fontFamily: 'DM Sans, sans-serif', color: 'var(--text-primary)' }}>
       {/* Sidebar */}
       <motion.div 
         initial={{ x: -320 }}
         animate={{ x: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="w-80 border-r-2 border-black flex flex-col" style={{ backgroundColor: '#FFFDF9' }}>
+        className="w-80 border-r-2 flex flex-col" style={{ backgroundColor: 'var(--bg-primary)', borderColor: 'var(--border-color)' }}>
         {/* Header */}
-        <div className="p-8 border-b-2 border-black">
+        <div className="p-8 border-b-2" style={{ borderColor: 'var(--border-color)' }}>
           <motion.h1 
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
-            className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: '#1A1A1A' }}>
+            className="text-3xl font-black mb-2" style={{ fontFamily: 'Outfit, sans-serif', color: 'var(--text-primary)' }}>
             BRUH
           </motion.h1>
         </div>
 
         {/* Bot Selection - Ultra Compact */}
-        <div className="p-4 border-b-2 border-black">
+        <div className="p-4 border-b-2" style={{ borderColor: 'var(--border-color)' }}>
           <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
             {Object.entries(botConfigs).map(([key, config]) => {
               const Icon = config.icon;
@@ -758,13 +751,16 @@ export default function Dashboard() {
                   title={config.name}
                   whileHover={{ scale: 1.1, rotate: 5 }}
                   whileTap={{ scale: 0.95 }}
-                  className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 border-black font-bold flex items-center justify-center transition-all ${
+                  className={`flex-shrink-0 w-12 h-12 rounded-xl border-2 font-bold flex items-center justify-center transition-all ${
                     currentBot === key
-                      ? 'shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] -translate-y-0.5 scale-110'
-                      : 'shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5'
+                      ? 'shadow-[3px_3px_0px_0px] -translate-y-0.5 scale-110'
+                      : 'shadow-[2px_2px_0px_0px] hover:shadow-[3px_3px_0px_0px] hover:-translate-y-0.5'
                   }`}
                   style={{ 
-                    backgroundColor: currentBot === key ? config.color : '#FFFFFF',
+                    backgroundColor: currentBot === key ? config.color : 'var(--bg-secondary)',
+                    borderColor: 'var(--border-color)',
+                    boxShadow: currentBot === key ? `3px 3px 0px 0px var(--border-color)` : `2px 2px 0px 0px var(--border-color)`,
+                    color: 'var(--text-primary)'
                   }}
                   data-testid={`bot-${key}-btn`}
                 >
@@ -791,7 +787,8 @@ export default function Dashboard() {
                   className="relative group"
                 >
                   <div
-                    className="p-3 bg-white border-2 border-black rounded-xl text-xs font-medium cursor-pointer hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all"
+                    className="p-3 border-2 rounded-xl text-xs font-medium cursor-pointer hover:shadow-[2px_2px_0px_0px] transition-all"
+                    style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     onClick={() => setCurrentBot(conv.bot_type || conv._id)}
                     data-testid={`history-item-${idx}`}
                   >
@@ -814,11 +811,11 @@ export default function Dashboard() {
         </div>
 
         {/* Bottom Actions */}
-        <div className="p-6 border-t-2 border-black space-y-3">
+        <div className="p-6 border-t-2 space-y-3" style={{ borderColor: 'var(--border-color)' }}>
           <button
             onClick={() => navigate('/brain')}
-            className="w-full p-3 rounded-xl border-2 border-black font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all bg-white"
-            style={{ fontFamily: 'Outfit, sans-serif' }}
+            className="w-full p-3 rounded-xl border-2 font-bold shadow-[2px_2px_0px_0px] hover:shadow-[4px_4px_0px_0px] hover:-translate-y-0.5 transition-all"
+            style={{ fontFamily: 'Outfit, sans-serif', backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', boxShadow: '2px 2px 0px 0px var(--border-color)' }}
             data-testid="brain-tools-btn"
           >
             <Brain className="w-5 h-5 inline-block mr-2" strokeWidth={2.5} />
@@ -826,8 +823,8 @@ export default function Dashboard() {
           </button>
           <button
             onClick={() => setShowSettings(!showSettings)}
-            className="w-full p-3 rounded-xl border-2 border-black font-bold shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5 transition-all bg-white"
-            style={{ fontFamily: 'Outfit, sans-serif' }}
+            className="w-full p-3 rounded-xl border-2 font-bold shadow-[2px_2px_0px_0px] hover:shadow-[4px_4px_0px_0px] hover:-translate-y-0.5 transition-all"
+            style={{ fontFamily: 'Outfit, sans-serif', backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)', boxShadow: '2px 2px 0px 0px var(--border-color)' }}
             data-testid="settings-btn"
           >
             <Settings className="w-5 h-5 inline-block mr-2" strokeWidth={2.5} />
@@ -852,7 +849,7 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: -30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.2 }}
-          className="p-8 border-b-2 border-black" style={{ backgroundColor: currentBotConfig.color }}>
+          className="p-8 border-b-2" style={{ backgroundColor: currentBotConfig.color, borderColor: 'var(--border-color)' }}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               {currentBotConfig.avatar ? (
@@ -1115,7 +1112,7 @@ export default function Dashboard() {
                 data-testid={`message-${idx}`}
               >
                 {msg.role === "assistant" ? (
-                  <div className="bg-white border-2 border-black rounded-2xl rounded-tl-none p-6 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] max-w-[85%] relative group">
+                  <div className="border-2 rounded-2xl rounded-tl-none p-6 max-w-[85%] relative group" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', boxShadow: '4px 4px 0px 0px var(--border-color)', color: 'var(--text-primary)' }}>
                     <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <motion.button
                         whileHover={{ scale: 1.2 }}
@@ -1240,6 +1237,74 @@ export default function Dashboard() {
                         Download Study Plan PDF
                       </motion.button>
                     )}
+                    
+                    {/* Recipe cards for cook bot */}
+                    {msg.recipe_cards && msg.recipe_cards.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="font-bold text-sm" style={{ fontFamily: 'Outfit, sans-serif' }}>Recommended Recipes:</p>
+                        <div className="grid grid-cols-1 gap-2">
+                          {msg.recipe_cards.map((recipe, ridx) => (
+                            <motion.div
+                              key={ridx}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: ridx * 0.1 }}
+                              className="p-3 rounded-xl border-2 flex items-center justify-between"
+                              style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-primary)' }}
+                            >
+                              <div>
+                                <p className="font-bold text-sm">{recipe.name}</p>
+                                <p className="text-xs opacity-70">{recipe.cuisine} | {recipe.time} | {recipe.difficulty}</p>
+                              </div>
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => sendMessage(`Give me the full recipe for ${recipe.name}`)}
+                                className="px-3 py-1 text-xs font-bold rounded-lg border-2"
+                                style={{ borderColor: 'var(--border-color)', backgroundColor: '#FFADAD' }}
+                                data-testid={`recipe-card-${ridx}`}
+                              >
+                                Cook This
+                              </motion.button>
+                            </motion.div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Song cards for music bot */}
+                    {msg.song_cards && msg.song_cards.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="font-bold text-sm" style={{ fontFamily: 'Outfit, sans-serif' }}>Play These Songs:</p>
+                        <div className="space-y-2">
+                          {msg.song_cards.map((song, sidx) => (
+                            <motion.button
+                              key={sidx}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: sidx * 0.1 }}
+                              whileHover={{ scale: 1.02 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => {
+                                const q = `${song.title} ${song.artist} official audio`;
+                                window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`, '_blank');
+                              }}
+                              className="w-full p-3 rounded-xl border-2 text-left flex items-center gap-3 hover:-translate-y-0.5 transition-all"
+                              style={{ borderColor: 'var(--border-color)', backgroundColor: '#FFB6E1' }}
+                              data-testid={`song-card-${sidx}`}
+                            >
+                              <div className="w-8 h-8 rounded-full bg-white border-2 border-black flex items-center justify-center flex-shrink-0">
+                                <Music className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-sm">{song.title}</p>
+                                <p className="text-xs opacity-70">{song.artist} - {song.genre}</p>
+                              </div>
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="bg-black text-white rounded-2xl rounded-tr-none p-6 max-w-[85%]">
@@ -1279,7 +1344,8 @@ export default function Dashboard() {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, delay: 0.3 }}
-          className="p-8 bg-white border-t-2 border-black">
+          className="p-8 border-t-2"
+          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
           {imagePreview && (
             <div className="mb-4 relative inline-block">
               <img 
@@ -1306,8 +1372,8 @@ export default function Dashboard() {
                 onChange={(e) => setInputMessage(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
                 placeholder={`Chat with ${currentBotConfig.name}...`}
-                className="w-full rounded-full border-2 border-black p-4 pr-32 text-lg shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] focus:outline-none focus:ring-0"
-                style={{ fontFamily: 'DM Sans, sans-serif' }}
+                className="w-full rounded-full border-2 p-4 pr-32 text-lg focus:outline-none focus:ring-0"
+                style={{ fontFamily: 'DM Sans, sans-serif', borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)', boxShadow: '4px 4px 0px 0px var(--border-color)' }}
                 data-testid="chat-input"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex gap-3">

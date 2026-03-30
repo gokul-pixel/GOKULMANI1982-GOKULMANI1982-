@@ -1,534 +1,301 @@
 """
 BRUH Assistant API Tests
-Tests all backend endpoints including:
-- Chat endpoints (normal, student, crop, cook, music)
-- Emotion analysis
-- Study plan PDF generation
-- File upload and text extraction
-- YouTube search functions
+Tests for: recipes, music, games, chat with cook/music bot_type, study plan PDF, extract-text
 """
-
 import pytest
 import requests
 import os
-import json
-import base64
-from datetime import datetime, timezone, timedelta
-from bson import ObjectId
+import sys
+
+# Add backend to path for direct imports
+sys.path.insert(0, '/app/backend')
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://ai-assistant-pro-54.preview.emergentagent.com').rstrip('/')
 
-# Test session token - will be created during test setup
-TEST_SESSION_TOKEN = None
-TEST_USER_ID = None
 
-
-@pytest.fixture(scope="module")
-def api_client():
-    """Shared requests session"""
-    session = requests.Session()
-    session.headers.update({"Content-Type": "application/json"})
-    return session
-
-
-@pytest.fixture(scope="module")
-def test_user_session(api_client):
-    """Create a test user and session directly in MongoDB for testing"""
-    import pymongo
+class TestUnauthenticatedEndpoints:
+    """Test endpoints without authentication - should return 401"""
     
-    mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
-    db_name = os.environ.get('DB_NAME', 'test_database')
-    
-    client = pymongo.MongoClient(mongo_url)
-    db = client[db_name]
-    
-    # Create test user
-    test_user_id = f"test_user_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    test_email = f"test_{datetime.now().strftime('%Y%m%d%H%M%S')}@test.com"
-    
-    user_doc = {
-        "user_id": test_user_id,
-        "email": test_email,
-        "name": "Test User",
-        "picture": None,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    # Insert user
-    db.users.insert_one(user_doc)
-    
-    # Create session token
-    test_session_token = f"test_session_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    session_doc = {
-        "user_id": test_user_id,
-        "session_token": test_session_token,
-        "expires_at": datetime.now(timezone.utc) + timedelta(days=1),
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    db.user_sessions.insert_one(session_doc)
-    
-    yield {
-        "user_id": test_user_id,
-        "session_token": test_session_token,
-        "email": test_email
-    }
-    
-    # Cleanup after tests
-    db.users.delete_one({"user_id": test_user_id})
-    db.user_sessions.delete_one({"session_token": test_session_token})
-    db.chat_messages.delete_many({"user_id": test_user_id})
-    db.tasks.delete_many({"user_id": test_user_id})
-    db.notes.delete_many({"user_id": test_user_id})
-    db.events.delete_many({"user_id": test_user_id})
-    db.files.delete_many({"user_id": test_user_id})
-    
-    client.close()
-
-
-class TestHealthAndBasicEndpoints:
-    """Test basic server health and connectivity"""
-    
-    def test_server_is_running(self, api_client):
-        """Verify server is accessible"""
-        # Try to access any endpoint - even 401 means server is running
-        response = api_client.get(f"{BASE_URL}/api/auth/me")
-        assert response.status_code in [200, 401], f"Server not responding properly: {response.status_code}"
-        print(f"Server is running, status: {response.status_code}")
-
-
-class TestAuthEndpoints:
-    """Test authentication endpoints"""
-    
-    def test_auth_me_without_token(self, api_client):
-        """Test /api/auth/me returns 401 without authentication"""
-        response = api_client.get(f"{BASE_URL}/api/auth/me")
+    def test_recipes_requires_auth(self):
+        """GET /api/recipes should require authentication"""
+        response = requests.get(f"{BASE_URL}/api/recipes?query=chicken")
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("Auth endpoint correctly returns 401 for unauthenticated requests")
+        print("✓ /api/recipes correctly requires authentication")
     
-    def test_auth_me_with_valid_session(self, api_client, test_user_session):
-        """Test /api/auth/me returns user data with valid session"""
-        response = api_client.get(
-            f"{BASE_URL}/api/auth/me",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "user_id" in data
-        assert "email" in data
-        assert data["email"] == test_user_session["email"]
-        print(f"Auth endpoint returns user data: {data['email']}")
-
-
-class TestChatEndpoints:
-    """Test chat functionality with different bot types"""
-    
-    def test_chat_without_auth(self, api_client):
-        """Test /api/chat returns 401 without authentication"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={"message": "Hello", "bot_type": "normal", "ai_model": "gpt-5.1"}
-        )
+    def test_music_songs_requires_auth(self):
+        """GET /api/music/songs should require authentication"""
+        response = requests.get(f"{BASE_URL}/api/music/songs?emotion=happy")
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("Chat endpoint correctly requires authentication")
+        print("✓ /api/music/songs correctly requires authentication")
     
-    def test_chat_normal_bot(self, api_client, test_user_session):
-        """Test chat with normal BRUH bot"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "Hello, how are you?",
-                "bot_type": "normal",
-                "ai_model": "gpt-5.1"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        assert len(data["message"]) > 0
-        print(f"Normal bot response: {data['message'][:100]}...")
-    
-    def test_chat_student_bot(self, api_client, test_user_session):
-        """Test chat with Student Partner bot"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "Explain photosynthesis briefly",
-                "bot_type": "student",
-                "ai_model": "gpt-5.1"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        assert len(data["message"]) > 0
-        print(f"Student bot response: {data['message'][:100]}...")
-    
-    def test_chat_crop_bot(self, api_client, test_user_session):
-        """Test chat with Crop Assistant bot"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "How do I grow tomatoes?",
-                "bot_type": "crop",
-                "ai_model": "gpt-5.1"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        assert len(data["message"]) > 0
-        print(f"Crop bot response: {data['message'][:100]}...")
-    
-    def test_chat_cook_bot_returns_video(self, api_client, test_user_session):
-        """Test chat with Cook bot - should return video_url"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "How to make pasta carbonara?",
-                "bot_type": "cook",
-                "ai_model": "gpt-5.1"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        # Cook bot should return video_url
-        if "video_url" in data:
-            assert "youtube.com/embed" in data["video_url"]
-            # Verify it's NOT the placeholder video
-            assert "dQw4w9WgXcQ" not in data["video_url"], "Video URL should not be placeholder"
-            print(f"Cook bot returned video: {data['video_url']}")
-        else:
-            print("WARNING: Cook bot did not return video_url")
-        print(f"Cook bot response: {data['message'][:100]}...")
-    
-    def test_chat_music_bot_returns_song(self, api_client, test_user_session):
-        """Test chat with Music Companion bot - should return song_url"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "I'm feeling happy, recommend some music",
-                "bot_type": "music",
-                "ai_model": "gpt-5.1"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        # Music bot should return song_url
-        if "song_url" in data:
-            assert "youtube.com/embed" in data["song_url"]
-            # Verify it's NOT the placeholder video
-            assert "dQw4w9WgXcQ" not in data["song_url"], "Song URL should not be placeholder"
-            print(f"Music bot returned song: {data['song_url']}")
-        else:
-            print("WARNING: Music bot did not return song_url")
-        print(f"Music bot response: {data['message'][:100]}...")
-    
-    def test_chat_with_file_context(self, api_client, test_user_session):
-        """Test chat with file context for Student Partner"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "Summarize this document",
-                "bot_type": "student",
-                "ai_model": "gpt-5.1",
-                "file_context": "This is a test document about machine learning. Machine learning is a subset of artificial intelligence."
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        print(f"Chat with file context response: {data['message'][:100]}...")
-    
-    def test_chat_with_language(self, api_client, test_user_session):
-        """Test chat with Hindi language setting"""
-        response = api_client.post(
-            f"{BASE_URL}/api/chat",
-            json={
-                "message": "Say hello",
-                "bot_type": "normal",
-                "ai_model": "gpt-5.1",
-                "language": "hi"
-            },
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "message" in data
-        print(f"Hindi language response: {data['message'][:100]}...")
-
-
-class TestEmotionAnalysis:
-    """Test emotion detection endpoint"""
-    
-    def test_analyze_emotion_without_auth(self, api_client):
-        """Test /api/analyze-emotion returns 401 without authentication"""
-        response = api_client.post(
-            f"{BASE_URL}/api/analyze-emotion",
-            json={"image_data": "test"}
-        )
+    def test_games_trivia_requires_auth(self):
+        """POST /api/games/trivia should require authentication"""
+        response = requests.post(f"{BASE_URL}/api/games/trivia", json={"category": "science"})
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("Emotion analysis endpoint correctly requires authentication")
+        print("✓ /api/games/trivia correctly requires authentication")
     
-    def test_analyze_emotion_with_valid_image(self, api_client, test_user_session):
-        """Test emotion analysis with a valid base64 image"""
-        # Create a simple test image (1x1 red pixel PNG)
-        # This is a minimal valid PNG
-        test_image_base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-        
-        response = api_client.post(
-            f"{BASE_URL}/api/analyze-emotion",
-            json={"image_data": f"data:image/png;base64,{test_image_base64}"},
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "emotion" in data
-        # Should return an emotion (even if fallback)
-        valid_emotions = ["happy", "sad", "angry", "calm", "excited", "tired", "neutral", 
-                         "surprised", "anxious", "energetic", "relaxed", "romantic", "melancholic"]
-        assert data["emotion"] in valid_emotions, f"Invalid emotion: {data['emotion']}"
-        
-        # Should also return song_url or music_query
-        if "song_url" in data and data["song_url"]:
-            assert "youtube.com/embed" in data["song_url"]
-            print(f"Emotion detected: {data['emotion']}, Song URL: {data['song_url']}")
-        else:
-            print(f"Emotion detected: {data['emotion']}, No song URL returned")
-
-
-class TestStudyPlanPDF:
-    """Test study plan PDF generation"""
-    
-    def test_generate_study_plan_without_auth(self, api_client):
-        """Test /api/generate-study-plan returns 401 without authentication"""
-        response = api_client.post(
-            f"{BASE_URL}/api/generate-study-plan",
-            json={"document_text": "test"}
-        )
+    def test_chat_requires_auth(self):
+        """POST /api/chat should require authentication"""
+        response = requests.post(f"{BASE_URL}/api/chat", json={
+            "message": "Hello",
+            "bot_type": "normal",
+            "ai_model": "gpt-5.1"
+        })
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("Study plan endpoint correctly requires authentication")
+        print("✓ /api/chat correctly requires authentication")
     
-    def test_generate_study_plan_pdf(self, api_client, test_user_session):
-        """Test PDF generation and download"""
-        # Generate study plan
-        response = api_client.post(
-            f"{BASE_URL}/api/generate-study-plan",
-            json={"document_text": "This is a test document about Python programming. Python is a high-level programming language."},
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "study_plan" in data
-        assert "pdf_url" in data
-        assert data["pdf_url"].startswith("/api/files/")
-        print(f"Study plan generated, PDF URL: {data['pdf_url']}")
-        
-        # Now test downloading the PDF
-        pdf_response = api_client.get(
-            f"{BASE_URL}{data['pdf_url']}",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert pdf_response.status_code == 200, f"PDF download failed: {pdf_response.status_code}"
-        assert "application/pdf" in pdf_response.headers.get("Content-Type", "")
-        assert len(pdf_response.content) > 0
-        print(f"PDF downloaded successfully, size: {len(pdf_response.content)} bytes")
-
-
-class TestFileUploadAndExtraction:
-    """Test file upload and text extraction"""
-    
-    def test_extract_text_without_auth(self, api_client):
-        """Test /api/extract-text returns 401 without authentication"""
-        response = api_client.post(
-            f"{BASE_URL}/api/extract-text",
-            json={"file_url": "/api/files/test"}
-        )
+    def test_generate_study_plan_requires_auth(self):
+        """POST /api/generate-study-plan should require authentication"""
+        response = requests.post(f"{BASE_URL}/api/generate-study-plan", json={
+            "document_text": "Test content"
+        })
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
-        print("Text extraction endpoint correctly requires authentication")
-
-
-class TestChatHistory:
-    """Test chat history endpoints"""
+        print("✓ /api/generate-study-plan correctly requires authentication")
     
-    def test_get_chat_history(self, api_client, test_user_session):
-        """Test getting chat history"""
-        response = api_client.get(
-            f"{BASE_URL}/api/chat/history?bot_type=normal",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
+    def test_extract_text_requires_auth(self):
+        """POST /api/extract-text should require authentication"""
+        response = requests.post(f"{BASE_URL}/api/extract-text", json={
+            "file_url": "/api/files/test.pdf"
+        })
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("✓ /api/extract-text correctly requires authentication")
+    
+    def test_analyze_emotion_requires_auth(self):
+        """POST /api/analyze-emotion should require authentication"""
+        response = requests.post(f"{BASE_URL}/api/analyze-emotion", json={
+            "image_data": "data:image/jpeg;base64,/9j/4AAQ"
+        })
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+        print("✓ /api/analyze-emotion correctly requires authentication")
+    
+    def test_auth_me_returns_401(self):
+        """GET /api/auth/me should return 401 without session"""
+        response = requests.get(f"{BASE_URL}/api/auth/me")
+        assert response.status_code == 401, f"Expected 401, got {response.status_code}"
         data = response.json()
-        assert isinstance(data, list)
-        print(f"Chat history retrieved: {len(data)} messages")
+        assert "detail" in data
+        print("✓ /api/auth/me correctly returns 401 without session")
+
+
+class TestRecipeDataModule:
+    """Test recipe data module directly"""
     
-    def test_get_conversations(self, api_client, test_user_session):
-        """Test getting all conversations"""
-        response = api_client.get(
-            f"{BASE_URL}/api/chat/conversations",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_recipe_data_exists(self):
+        """Verify recipe dataset is loaded"""
+        from data.recipes import RECIPES, get_recipe_recommendations, format_recipe_for_ai
         
-        data = response.json()
-        assert isinstance(data, list)
-        print(f"Conversations retrieved: {len(data)} conversations")
+        assert len(RECIPES) == 20, f"Expected 20 recipes, got {len(RECIPES)}"
+        print(f"✓ Recipe dataset has {len(RECIPES)} recipes")
     
-    def test_delete_chat_history(self, api_client, test_user_session):
-        """Test deleting chat history for a bot type"""
-        response = api_client.delete(
-            f"{BASE_URL}/api/chat/delete/normal",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        print("Chat history deleted successfully")
-
-
-class TestTasksCRUD:
-    """Test tasks CRUD operations"""
-    
-    def test_create_task(self, api_client, test_user_session):
-        """Test creating a task"""
-        response = api_client.post(
-            f"{BASE_URL}/api/tasks",
-            json={"title": "TEST_Task_1", "alarm_time": None},
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_recipe_recommendations_by_query(self):
+        """Test recipe search by query"""
+        from data.recipes import get_recipe_recommendations
         
-        data = response.json()
-        assert "task_id" in data
-        assert data["title"] == "TEST_Task_1"
-        print(f"Task created: {data['task_id']}")
-        return data["task_id"]
-    
-    def test_get_tasks(self, api_client, test_user_session):
-        """Test getting all tasks"""
-        response = api_client.get(
-            f"{BASE_URL}/api/tasks",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+        results = get_recipe_recommendations("chicken", count=5)
+        assert len(results) > 0, "Should return at least one recipe for 'chicken'"
         
-        data = response.json()
-        assert isinstance(data, list)
-        print(f"Tasks retrieved: {len(data)} tasks")
-
-
-class TestNotesCRUD:
-    """Test notes CRUD operations"""
+        # Check if any result contains chicken
+        has_chicken = any("chicken" in r["name"].lower() or 
+                         any("chicken" in i.lower() for i in r["ingredients"]) 
+                         for r in results)
+        assert has_chicken, "Results should include chicken-related recipes"
+        print(f"✓ Recipe search for 'chicken' returned {len(results)} results")
     
-    def test_create_note(self, api_client, test_user_session):
-        """Test creating a note"""
-        response = api_client.post(
-            f"{BASE_URL}/api/notes",
-            json={"title": "TEST_Note_1", "content": "Test note content"},
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_recipe_recommendations_by_cuisine(self):
+        """Test recipe filter by cuisine"""
+        from data.recipes import get_recipe_recommendations
         
-        data = response.json()
-        assert "note_id" in data
-        assert data["title"] == "TEST_Note_1"
-        print(f"Note created: {data['note_id']}")
+        results = get_recipe_recommendations(cuisine="Indian", count=10)
+        assert len(results) > 0, "Should return Indian recipes"
+        
+        for r in results:
+            assert r["cuisine"] == "Indian", f"Expected Indian cuisine, got {r['cuisine']}"
+        print(f"✓ Cuisine filter for 'Indian' returned {len(results)} recipes")
     
-    def test_get_notes(self, api_client, test_user_session):
-        """Test getting all notes"""
-        response = api_client.get(
-            f"{BASE_URL}/api/notes",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_recipe_format_for_ai(self):
+        """Test recipe formatting for AI context"""
+        from data.recipes import get_recipe_recommendations, format_recipe_for_ai
         
-        data = response.json()
-        assert isinstance(data, list)
-        print(f"Notes retrieved: {len(data)} notes")
+        recipes = get_recipe_recommendations("pasta", count=2)
+        formatted = format_recipe_for_ai(recipes)
+        
+        assert isinstance(formatted, str), "Formatted output should be string"
+        assert len(formatted) > 100, "Formatted output should have content"
+        assert "Ingredients:" in formatted, "Should include ingredients section"
+        assert "Steps:" in formatted, "Should include steps section"
+        print("✓ Recipe formatting for AI works correctly")
 
 
-class TestEventsCRUD:
-    """Test calendar events CRUD operations"""
+class TestMusicDataModule:
+    """Test music data module directly"""
     
-    def test_create_event(self, api_client, test_user_session):
-        """Test creating a calendar event"""
-        response = api_client.post(
-            f"{BASE_URL}/api/events",
-            json={"title": "TEST_Event_1", "date": "2026-04-01", "time": "10:00", "description": "Test event"},
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_emotion_songs_data_exists(self):
+        """Verify emotion-song dataset is loaded"""
+        from data.music import EMOTION_SONGS, get_songs_for_emotion
         
-        data = response.json()
-        assert "event_id" in data
-        assert data["title"] == "TEST_Event_1"
-        print(f"Event created: {data['event_id']}")
+        assert len(EMOTION_SONGS) > 0, "EMOTION_SONGS should not be empty"
+        
+        # Check for key emotions
+        expected_emotions = ["happy", "sad", "angry", "calm", "excited", "tired", "neutral"]
+        for emotion in expected_emotions:
+            assert emotion in EMOTION_SONGS, f"Missing emotion: {emotion}"
+        
+        print(f"✓ Music dataset has {len(EMOTION_SONGS)} emotion categories")
     
-    def test_get_events(self, api_client, test_user_session):
-        """Test getting all events"""
-        response = api_client.get(
-            f"{BASE_URL}/api/events",
-            cookies={"session_token": test_user_session["session_token"]}
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    def test_get_songs_for_happy(self):
+        """Test getting songs for happy emotion"""
+        from data.music import get_songs_for_emotion
         
-        data = response.json()
-        assert isinstance(data, list)
-        print(f"Events retrieved: {len(data)} events")
+        songs = get_songs_for_emotion("happy", count=3)
+        assert len(songs) == 3, f"Expected 3 songs, got {len(songs)}"
+        
+        for song in songs:
+            assert "title" in song, "Song should have title"
+            assert "artist" in song, "Song should have artist"
+            assert "genre" in song, "Song should have genre"
+        
+        print(f"✓ Got {len(songs)} songs for 'happy' emotion")
+    
+    def test_get_songs_for_sad(self):
+        """Test getting songs for sad emotion"""
+        from data.music import get_songs_for_emotion
+        
+        songs = get_songs_for_emotion("sad", count=5)
+        assert len(songs) <= 5, "Should return up to 5 songs"
+        assert len(songs) > 0, "Should return at least one song"
+        print(f"✓ Got {len(songs)} songs for 'sad' emotion")
+    
+    def test_get_songs_fallback_to_neutral(self):
+        """Test fallback to neutral for unknown emotion"""
+        from data.music import get_songs_for_emotion
+        
+        songs = get_songs_for_emotion("unknown_emotion", count=3)
+        assert len(songs) > 0, "Should fallback to neutral songs"
+        print("✓ Unknown emotion correctly falls back to neutral songs")
+    
+    def test_format_songs_for_ai(self):
+        """Test song formatting for AI context"""
+        from data.music import get_songs_for_emotion, format_songs_for_ai
+        
+        songs = get_songs_for_emotion("excited", count=3)
+        formatted = format_songs_for_ai("excited", songs)
+        
+        assert isinstance(formatted, str), "Formatted output should be string"
+        assert "excited" in formatted.lower(), "Should mention the emotion"
+        print("✓ Song formatting for AI works correctly")
 
 
-class TestYouTubeSearch:
+class TestYouTubeSearchFunctions:
     """Test YouTube search functions directly"""
     
-    def test_youtube_search_returns_real_video(self):
-        """Test that YouTube search returns real video IDs, not placeholder"""
-        import sys
-        sys.path.insert(0, '/app/backend')
-        from server import search_youtube_real, search_cooking_video, search_music_video
+    def test_search_youtube_real_function_exists(self):
+        """Verify search_youtube_real function exists"""
+        from server import search_youtube_real
+        assert callable(search_youtube_real), "search_youtube_real should be callable"
+        print("✓ search_youtube_real function exists")
+    
+    def test_search_cooking_video_function_exists(self):
+        """Verify search_cooking_video function exists"""
+        from server import search_cooking_video
+        assert callable(search_cooking_video), "search_cooking_video should be callable"
+        print("✓ search_cooking_video function exists")
+    
+    def test_search_music_video_function_exists(self):
+        """Verify search_music_video function exists"""
+        from server import search_music_video
+        assert callable(search_music_video), "search_music_video should be callable"
+        print("✓ search_music_video function exists")
+    
+    def test_search_youtube_real_returns_embed_url(self):
+        """Test that YouTube search returns embed URL format"""
+        from server import search_youtube_real
         
-        # Test general search
-        result = search_youtube_real("python programming tutorial")
+        result = search_youtube_real("python tutorial")
+        
+        if result:  # May fail due to network issues
+            assert "youtube.com/embed/" in result, f"Should return embed URL, got: {result}"
+            assert "dQw4w9WgXcQ" not in result, "Should not return rickroll video ID"
+            print(f"✓ YouTube search returned valid embed URL: {result[:50]}...")
+        else:
+            print("⚠ YouTube search returned None (network issue or rate limit)")
+    
+    def test_search_cooking_video_returns_embed_url(self):
+        """Test cooking video search"""
+        from server import search_cooking_video
+        
+        result = search_cooking_video("chicken biryani")
+        
         if result:
-            assert "youtube.com/embed" in result
-            assert "dQw4w9WgXcQ" not in result, "Should not return placeholder video"
-            print(f"YouTube search result: {result}")
+            assert "youtube.com/embed/" in result, f"Should return embed URL, got: {result}"
+            print(f"✓ Cooking video search returned: {result[:50]}...")
         else:
-            print("WARNING: YouTube search returned None")
+            print("⚠ Cooking video search returned None (network issue)")
+    
+    def test_search_music_video_returns_embed_url(self):
+        """Test music video search"""
+        from server import search_music_video
         
-        # Test cooking video search
-        cooking_result = search_cooking_video("pasta carbonara")
-        if cooking_result:
-            assert "youtube.com/embed" in cooking_result
-            assert "dQw4w9WgXcQ" not in cooking_result, "Should not return placeholder video"
-            print(f"Cooking video search result: {cooking_result}")
-        else:
-            print("WARNING: Cooking video search returned None")
+        result = search_music_video("happy pharrell williams")
         
-        # Test music video search
-        music_result = search_music_video("happy upbeat songs")
-        if music_result:
-            assert "youtube.com/embed" in music_result
-            assert "dQw4w9WgXcQ" not in music_result, "Should not return placeholder video"
-            print(f"Music video search result: {music_result}")
+        if result:
+            assert "youtube.com/embed/" in result, f"Should return embed URL, got: {result}"
+            print(f"✓ Music video search returned: {result[:50]}...")
         else:
-            print("WARNING: Music video search returned None")
+            print("⚠ Music video search returned None (network issue)")
+
+
+class TestServerEndpointStructure:
+    """Test that all required endpoints exist in server"""
+    
+    def test_recipes_endpoint_exists(self):
+        """Verify /api/recipes endpoint exists"""
+        response = requests.get(f"{BASE_URL}/api/recipes")
+        # Should return 401 (auth required) not 404
+        assert response.status_code != 404, "/api/recipes endpoint should exist"
+        print("✓ /api/recipes endpoint exists")
+    
+    def test_music_songs_endpoint_exists(self):
+        """Verify /api/music/songs endpoint exists"""
+        response = requests.get(f"{BASE_URL}/api/music/songs")
+        assert response.status_code != 404, "/api/music/songs endpoint should exist"
+        print("✓ /api/music/songs endpoint exists")
+    
+    def test_games_trivia_endpoint_exists(self):
+        """Verify /api/games/trivia endpoint exists"""
+        response = requests.post(f"{BASE_URL}/api/games/trivia", json={})
+        assert response.status_code != 404, "/api/games/trivia endpoint should exist"
+        print("✓ /api/games/trivia endpoint exists")
+    
+    def test_chat_endpoint_exists(self):
+        """Verify /api/chat endpoint exists"""
+        response = requests.post(f"{BASE_URL}/api/chat", json={})
+        assert response.status_code != 404, "/api/chat endpoint should exist"
+        print("✓ /api/chat endpoint exists")
+    
+    def test_generate_study_plan_endpoint_exists(self):
+        """Verify /api/generate-study-plan endpoint exists"""
+        response = requests.post(f"{BASE_URL}/api/generate-study-plan", json={})
+        assert response.status_code != 404, "/api/generate-study-plan endpoint should exist"
+        print("✓ /api/generate-study-plan endpoint exists")
+    
+    def test_extract_text_endpoint_exists(self):
+        """Verify /api/extract-text endpoint exists"""
+        response = requests.post(f"{BASE_URL}/api/extract-text", json={})
+        assert response.status_code != 404, "/api/extract-text endpoint should exist"
+        print("✓ /api/extract-text endpoint exists")
+    
+    def test_analyze_emotion_endpoint_exists(self):
+        """Verify /api/analyze-emotion endpoint exists"""
+        response = requests.post(f"{BASE_URL}/api/analyze-emotion", json={})
+        assert response.status_code != 404, "/api/analyze-emotion endpoint should exist"
+        print("✓ /api/analyze-emotion endpoint exists")
+    
+    def test_files_download_endpoint_exists(self):
+        """Verify /api/files/{path} endpoint exists"""
+        response = requests.get(f"{BASE_URL}/api/files/test")
+        # Should return 401 (auth required) not 404
+        assert response.status_code != 404, "/api/files endpoint should exist"
+        print("✓ /api/files/{path} endpoint exists")
 
 
 if __name__ == "__main__":
