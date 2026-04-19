@@ -1,0 +1,12 @@
+{
+  "theme": "dark",
+  "chatbot_voice": true,
+  "auto_refresh": false,
+  "chart_colors": [
+    "#FF6B6B",
+    "#4ECDC4",
+    "#45B7D1",
+    "#96CEB4",
+    "#FFEAA7"
+  ]
+}
